@@ -24,9 +24,11 @@ include $(CLEAR_VARS)
 poc_test_src_files := \
     poc_test.c \
 
+# TODO(trong): tests should not emit warnings.
 poc_test_cflags := \
     -Wno-int-conversion \
     -Wno-unused-parameter \
+    -Wno-pointer-sign \
 
 poc_test_c_includes := \
     $(poc_target_dir) \
