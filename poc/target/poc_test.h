@@ -26,7 +26,9 @@ typedef enum {
   NEXUS_5,
   NEXUS_5X,
   NEXUS_6,
-  NEXUS_6P
+  NEXUS_6P,
+  PIXEL,
+  PIXEL_XL
 } DeviceModel;
 
 typedef struct {
