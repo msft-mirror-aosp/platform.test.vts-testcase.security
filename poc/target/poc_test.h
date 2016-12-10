@@ -17,6 +17,9 @@
 #ifndef __VTS_TESTCASES_SECURITY_POC_TARGET_POC_TEST_H__
 #define __VTS_TESTCASES_SECURITY_POC_TARGET_POC_TEST_H__
 
+#include <map>
+#include <string>
+
 /* define poc_test exit codes */
 #define POC_TEST_PASS 0
 #define POC_TEST_FAIL 1
@@ -28,11 +31,13 @@ typedef enum {
   NEXUS_6,
   NEXUS_6P,
   PIXEL,
-  PIXEL_XL
+  PIXEL_XL,
+  OTHER
 } DeviceModel;
 
 typedef struct {
   DeviceModel device_model;
+  std::map<std::string, std::string> params;
 } VtsHostInput;
 
 extern VtsHostInput ParseVtsHostFlags(int argc, char *argv[]);
