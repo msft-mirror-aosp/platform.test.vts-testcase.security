@@ -10,7 +10,7 @@
 int main(int argc, char* argv[]) {
   VtsHostInput host_input = ParseVtsHostFlags(argc, argv);
   struct sockaddr sa;
-  unsigned int len, i;
+  socklen_t len, i;
   int fd;
 
   fd = socket(AF_BLUETOOTH, SOCK_STREAM, 3);
