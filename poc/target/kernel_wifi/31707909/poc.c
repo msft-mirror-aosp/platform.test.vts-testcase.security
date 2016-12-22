@@ -63,7 +63,7 @@ typedef struct dhd_ioctl {
   uint driver;       /* to identify target driver */
 } dhd_ioctl_t;
 
-int poc(const char *ifname) {
+int poc() {
   int fd, i, res;
   dhd_ioctl_t ioc;
   struct ifreq arg;
@@ -72,6 +72,7 @@ int poc(const char *ifname) {
   android_wifi_priv_cmd priv_cmd;
   char buf[BUF_LEN];
   char iocbuf[IOC_BUF_LEN];
+  const char *ifname = "wlan0"; /* default iface name is wlan0 */
 
   fd = socket(AF_INET, SOCK_STREAM, 0);
   if (fd < 0) {
@@ -103,17 +104,10 @@ int poc(const char *ifname) {
 }
 
 int main(int argc, char **argv) {
-  VtsHostInput host_input = ParseVtsHostFlags(argc, argv);
-  const char *ifname = host_input.params["ifname"].c_str();
-  if (strlen(ifname) == 0) {
-    fprintf(stderr, "ifname parameter is empty.\n");
-    return POC_TEST_FAIL;
-  }
-
   int i, ret;
 
   for (i = 0; i < TEST_CNT; i++) {
-    if ((ret = poc(ifname)) != POC_TEST_PASS) break;
+    if ((ret = poc()) != POC_TEST_PASS) break;
   }
 
   return ret;

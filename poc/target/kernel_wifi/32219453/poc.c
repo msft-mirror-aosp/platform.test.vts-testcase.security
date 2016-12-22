@@ -223,15 +223,9 @@ int send_testmode(const char *ifname, u_int16_t nlmsg_type, u_int32_t nlmsg_pid,
 
 
 int main(int argc, char *argv[]) {
-  VtsHostInput host_input = ParseVtsHostFlags(argc, argv);
-  const char *ifname = host_input.params["ifname"].c_str();
-  if (strlen(ifname) == 0) {
-    fprintf(stderr, "ifname parameter is empty.");
-    return POC_TEST_FAIL;
-  }
-
   int ret = 0;
   int family_id = 0;
+  const char *ifname = "wlan0"; /* default iface name is wlan0 */
 
   if (getuid() != 0) {
     printf("need root privilege\n");
