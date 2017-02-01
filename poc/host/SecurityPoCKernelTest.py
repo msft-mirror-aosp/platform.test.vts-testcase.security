@@ -48,7 +48,7 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
         logging.info("%s: %s", keys.ConfigKeys.IKEY_DATA_FILE_PATH,
                 self.data_file_path)
 
-        self._dut = self.registerController(android_device)[0]
+        self._dut = self.registerController(android_device, False)[0]
         self._testcases = config.POC_TEST_CASES_STABLE
         if self.run_staging:
             self._testcases += config.POC_TEST_CASES_STAGING
