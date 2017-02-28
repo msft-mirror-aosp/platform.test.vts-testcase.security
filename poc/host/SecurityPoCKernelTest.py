@@ -24,6 +24,7 @@ from vts.runners.host import base_test_with_webdb
 from vts.runners.host import const
 from vts.runners.host import keys
 from vts.runners.host import test_runner
+from vts.utils.python.controllers import adb
 from vts.utils.python.controllers import android_device
 
 from vts.testcases.security.poc.host import poc_test_config as config
@@ -124,7 +125,19 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
             os.path.join(config.POC_TEST_DIR, testcase),
             self._test_flags)
         logging.info("Executing: %s", test_cmd)
-        result = self._dut.adb.shell("'%s'" % test_cmd)
+        try:
+            stdout = self._dut.adb.shell("'%s'" % test_cmd)
+            result = {
+                const.STDOUT: stdout,
+                const.STDERR: "",
+                const.EXIT_CODE: 0
+            }
+        except adb.AdbError as e:
+            result = {
+                const.STDOUT: e.stdout,
+                const.STDERR: e.stderr,
+                const.EXIT_CODE: e.ret_code
+            }
 
         self.AssertTestResult(result)
 
@@ -136,11 +149,15 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
         returned exit code 0.
 
         Args:
-            result: string, stdout from test execution.
+            result: dict(str, str, int), stdout, stderr and return code
+                from test run.
         """
-        # TODO(trong): distinguish between fail and skip. See b/33250197.
         if self._dut.hasBooted():
-            asserts.explicitPass("Test case passed.")
+            exit_code = result[const.EXIT_CODE]
+            asserts.skipIf(exit_code == config.ExitCode.POC_TEST_SKIP,
+                    "Test case was skipped.")
+            asserts.assertFalse(exit_code == config.ExitCode.POC_TEST_FAIL,
+                    "Test case failed.")
         else:
             self._dut.waitForBootCompletion()
             self._dut.rootAdb()
