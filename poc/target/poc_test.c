@@ -32,6 +32,8 @@ static DeviceModel TranslateDeviceModel(const char *name) {
   if (!strcmp("Nexus 5X", name)) device_model = NEXUS_5X;
   if (!strcmp("Nexus 6", name)) device_model = NEXUS_6;
   if (!strcmp("Nexus 6P", name)) device_model = NEXUS_6P;
+  if (!strcmp("Pixel", name)) device_model = PIXEL;
+  if (!strcmp("Pixel XL", name)) device_model = PIXEL_XL;
   return device_model;
 }
 
