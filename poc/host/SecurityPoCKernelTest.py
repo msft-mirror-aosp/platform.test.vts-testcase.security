@@ -36,6 +36,8 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
         _dut: AndroidDevice, the device under test as config
         _testcases: string list, list of testcases to run
         _model: string, device model e.g. "Nexus 5X"
+        _host_input: dict, info passed to PoC test
+        _test_flags: string, flags that will be passed to PoC test
     """
     def setUpClass(self):
         """Creates device under test instance, and copies data files."""
@@ -46,17 +48,38 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
         self.getUserParams(required_params)
 
         logging.info("%s: %s", keys.ConfigKeys.IKEY_DATA_FILE_PATH,
-                self.data_file_path)
+            self.data_file_path)
 
         self._dut = self.registerController(android_device, False)[0]
         self._testcases = config.POC_TEST_CASES_STABLE
         if self.run_staging:
             self._testcases += config.POC_TEST_CASES_STAGING
 
+        self._host_input = self.CreateHostInput()
+
+        self._test_flags = ["--%s=\"%s\"" % (k, v) for k, v in self._host_input.items()]
+        self._test_flags = " ".join(self._test_flags)
+        logging.info("Test flags: %s", self._test_flags)
+
     def tearDownClass(self):
         """Deletes all copied data."""
         rm_cmd = "rm -rf %s" % config.POC_TEST_DIR
         self._dut.adb.shell("'%s'" % rm_cmd)
+
+    def CreateHostInput(self):
+        """Gathers information that will be passed to target-side code.
+
+        Returns:
+            host_input: dict, information passed to native PoC test.
+        """
+        cmd = "getprop | grep ro.product.model"
+        out = self._dut.adb.shell("'%s'" % cmd)
+        device_model = out.strip().split('[')[-1][:-1]
+
+        host_input = {
+            "device_model": device_model,
+        }
+        return host_input
 
     def PushFiles(self):
         """adb pushes related file to target."""
@@ -66,58 +89,20 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
         push_src = os.path.join(self.data_file_path, "security", "poc", ".")
         self._dut.adb.push("%s %s" % (push_src, config.POC_TEST_DIR))
 
-    def CreateHostInput(self, testcase):
-        """Gathers information that will be passed to target-side code.
+    def IsRelevant(self, testcase):
+        """Returns True iff testcase should run according to its config.
 
         Args:
             testcase: string, format testsuite/testname, specifies which
                 test case to examine.
-
-        Returns:
-            dict, information passed to native PoC test, contains info collected
-                from device and config. If None, poc should be skipped.
         """
-        cmd = "getprop ro.product.model"
-        out = self._dut.adb.shell("'%s'" % cmd)
-        device_model = out.strip()
-
         test_config_path = os.path.join(
             self.data_file_path, "security", "poc", testcase + ".config")
 
         with open(test_config_path) as test_config_file:
-            poc_config = json.load(test_config_file)["target_models"]
-
-            # If dut model is not in the test config, test should be skipped.
-            if not device_model in poc_config.keys():
-                return None
-
-            params = poc_config.get("default", {})
-            params.update(poc_config[device_model])
-
-        host_input = {
-            "device_model": device_model,
-            "params": params
-        }
-
-        return host_input
-
-    def CreateTestFlags(self, host_input):
-        """Packs host input info into command line flags.
-
-        Args:
-            host_input: dict, information passed to native PoC test.
-
-        Returns:
-            string, host_input packed into command-line flags.
-        """
-        device_model_flag = "--device_model=\"%s\"" % host_input["device_model"]
-
-        params = ["%s=%s" % (k, v) for k, v in host_input["params"].items()]
-        params = ",".join(params)
-        params_flag = "--params=\"%s\"" % params
-
-        test_flags = [device_model_flag, params_flag]
-        return " ".join(test_flags)
+            test_config = json.load(test_config_file)
+            target_models = test_config["target_models"]
+            return self._host_input["device_model"] in target_models
 
     def RunTestcase(self, testcase):
         """Runs the given testcase and asserts the result.
@@ -126,9 +111,8 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
             testcase: string, format testsuite/testname, specifies which
                 test case to run.
         """
-        host_input = self.CreateHostInput(testcase)
-        asserts.skipIf(not host_input,
-                "%s not configured to run against this target model." % testcase)
+        asserts.skipIf(not self.IsRelevant(testcase),
+            "%s not configured to run against this target model." % testcase)
 
         items = testcase.split("/", 1)
         testsuite = items[0]
@@ -137,12 +121,10 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
         logging.info("Executing: %s", chmod_cmd)
         self._dut.adb.shell("'%s'" % chmod_cmd)
 
-        test_flags = self.CreateTestFlags(host_input)
         test_cmd = "%s %s" % (
             os.path.join(config.POC_TEST_DIR, testcase),
-            test_flags)
+            self._test_flags)
         logging.info("Executing: %s", test_cmd)
-
         try:
             stdout = self._dut.adb.shell("'%s'" % test_cmd)
             result = {
@@ -156,7 +138,6 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
                 const.STDERR: e.stderr,
                 const.EXIT_CODE: e.ret_code
             }
-        logging.info("Test results:\n%s", result)
 
         self.AssertTestResult(result)
 
