@@ -34,8 +34,7 @@ POC_TEST_CASES_STABLE = [
 POC_TEST_CASES_STAGING = [
     "kernel_sound/28838221",
     "kernel_bluetooth/30149612",
-    "kernel_wifi/32219453",
-    "kernel_wifi/31707909"
+    "kernel_wifi/32219453"
 ]
 
 POC_TEST_CASES_DISABLED = [
