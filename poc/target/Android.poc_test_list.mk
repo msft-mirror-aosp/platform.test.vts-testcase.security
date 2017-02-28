@@ -48,3 +48,12 @@ module_c_includes :=
 module_static_libraries :=
 module_shared_libraries :=
 include $(build_poc_test)
+
+module_testname := kernel_wifi/32402310
+module_src_files := kernel_wifi/32402310/poc.c
+module_cflags :=
+module_c_includes :=
+module_static_libraries :=
+module_shared_libraries := libnl
+include $(build_poc_test)
+
