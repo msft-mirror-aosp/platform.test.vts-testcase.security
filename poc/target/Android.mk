@@ -22,7 +22,7 @@ include $(call all-subdir-makefiles)
 include $(CLEAR_VARS)
 
 poc_test_src_files := \
-    poc_test.cpp \
+    poc_test.c \
 
 # TODO(trong): tests should not emit warnings.
 poc_test_cflags := \
