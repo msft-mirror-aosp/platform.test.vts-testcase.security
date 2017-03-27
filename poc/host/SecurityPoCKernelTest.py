@@ -20,16 +20,17 @@ import logging
 import os
 
 from vts.runners.host import asserts
-from vts.runners.host import base_test_with_webdb
+from vts.runners.host import base_test
 from vts.runners.host import const
 from vts.runners.host import keys
 from vts.runners.host import test_runner
 from vts.utils.python.controllers import adb
 from vts.utils.python.controllers import android_device
+from vts.utils.python.os import path_utils
 
 from vts.testcases.security.poc.host import poc_test_config as config
 
-class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
+class SecurityPoCKernelTest(base_test.BaseTestClass):
     """Runs security PoC kernel test cases.
 
     Attributes:
@@ -55,13 +56,11 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
 
     def tearDownClass(self):
         """Deletes all copied data."""
-        rm_cmd = "rm -rf %s" % config.POC_TEST_DIR
-        self._dut.adb.shell("'%s'" % rm_cmd)
+        self._dut.adb.shell("rm -rf %s" % config.POC_TEST_DIR)
 
     def PushFiles(self):
         """adb pushes related file to target."""
-        mkdir_cmd = "mkdir %s -p" % config.POC_TEST_DIR
-        self._dut.adb.shell("'%s'" % mkdir_cmd)
+        self._dut.adb.shell("mkdir %s -p" % config.POC_TEST_DIR)
 
         push_src = os.path.join(self.data_file_path, "security", "poc", ".")
         self._dut.adb.push("%s %s" % (push_src, config.POC_TEST_DIR))
@@ -77,8 +76,7 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
             dict, information passed to native PoC test, contains info collected
                 from device and config. If None, poc should be skipped.
         """
-        cmd = "getprop ro.product.model"
-        out = self._dut.adb.shell("'%s'" % cmd)
+        out = self._dut.adb.shell("getprop ro.product.model")
         device_model = out.strip()
 
         test_config_path = os.path.join(
@@ -133,18 +131,19 @@ class SecurityPoCKernelTest(base_test_with_webdb.BaseTestWithWebDbClass):
         items = testcase.split("/", 1)
         testsuite = items[0]
 
-        chmod_cmd = "chmod -R 755 %s" % os.path.join(config.POC_TEST_DIR, testsuite)
+        chmod_cmd = "chmod -R 755 %s" % path_utils.JoinTargetPath(
+            config.POC_TEST_DIR, testsuite)
         logging.info("Executing: %s", chmod_cmd)
-        self._dut.adb.shell("'%s'" % chmod_cmd)
+        self._dut.adb.shell(chmod_cmd)
 
         test_flags = self.CreateTestFlags(host_input)
         test_cmd = "%s %s" % (
-            os.path.join(config.POC_TEST_DIR, testcase),
+            path_utils.JoinTargetPath(config.POC_TEST_DIR, testcase),
             test_flags)
         logging.info("Executing: %s", test_cmd)
 
         try:
-            stdout = self._dut.adb.shell("'%s'" % test_cmd)
+            stdout = self._dut.adb.shell(test_cmd)
             result = {
                 const.STDOUT: stdout,
                 const.STDERR: "",
