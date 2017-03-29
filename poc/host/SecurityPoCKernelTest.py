@@ -42,6 +42,7 @@ class SecurityPoCKernelTest(base_test.BaseTestClass):
         """Creates device under test instance, and copies data files."""
         required_params = [
             keys.ConfigKeys.IKEY_DATA_FILE_PATH,
+            keys.ConfigKeys.IKEY_ABI_BITNESS,
             config.ConfigKeys.RUN_STAGING
         ]
         self.getUserParams(required_params)
@@ -62,7 +63,11 @@ class SecurityPoCKernelTest(base_test.BaseTestClass):
         """adb pushes related file to target."""
         self._dut.adb.shell("mkdir %s -p" % config.POC_TEST_DIR)
 
-        push_src = os.path.join(self.data_file_path, "security", "poc", ".")
+        bitness = getattr(self, keys.ConfigKeys.IKEY_ABI_BITNESS)
+        bitness_suffix = "64" if bitness == "64" else ""
+        native_test_dir = "nativetest{0}".format(bitness_suffix)
+        push_src = os.path.join(self.data_file_path, "DATA", native_test_dir,
+                                "security", "poc", ".")
         self._dut.adb.push("%s %s" % (push_src, config.POC_TEST_DIR))
 
     def CreateHostInput(self, testcase):
@@ -78,9 +83,10 @@ class SecurityPoCKernelTest(base_test.BaseTestClass):
         """
         out = self._dut.adb.shell("getprop ro.product.model")
         device_model = out.strip()
-
+        testcase_path = os.path.join(*testcase.split("/"))
         test_config_path = os.path.join(
-            self.data_file_path, "security", "poc", testcase + ".config")
+            self.data_file_path, "vts", "testcases", "security", "poc",
+            "target", testcase_path, "poc.config")
 
         with open(test_config_path) as test_config_file:
             poc_config = json.load(test_config_file)["target_models"]
