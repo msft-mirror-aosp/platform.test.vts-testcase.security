@@ -15,7 +15,7 @@
 #
 
 # Compiles a PoC test module into an executable and copies it into
-# android-vts/testcases/security/poc/ directory.
+# android-vts/testcases/DATA/nativetest(64)/security/poc/ directory.
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -48,9 +48,6 @@ LOCAL_SHARED_LIBRARIES := \
     $(module_shared_libraries) \
 
 include $(BUILD_EXECUTABLE)
-
-# Copy resulting executable to vts directory.
-include $(poc_target_dir)/Android.vts_testcase.mk
 
 module_name :=
 module_path :=
