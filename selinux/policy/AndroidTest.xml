@@ -15,7 +15,7 @@
 -->
 <configuration description="Config for VTS  Security SELinux policy host-side test cases">
     <option name="config-descriptor:metadata" key="plan" value="vts-security" />
-    <target_preparer class="com.android.tradefed.targetprep.VtsPythonVirtualenvPreparer"/>
+    <multi_target_preparer class="com.android.tradefed.targetprep.VtsPythonVirtualenvPreparer" />
     <test class="com.android.tradefed.testtype.VtsMultiDeviceTest">
         <option name="test-module-name" value="VtsSecuritySelinuxPolicyHost"/>
         <option name="binary-test-source" value="out/host/linux-x86/bin/VtsSecuritySelinuxPolicyHostTest" />
