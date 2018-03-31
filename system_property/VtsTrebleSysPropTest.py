@@ -85,8 +85,19 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
 
     def _SkipIfNeeded(self):
         """Skips unless system property compatibility is enforced."""
+        try:
+            api_level = int(self.dut.first_api_level)
+        except ValueError as e:
+            asserts.fail("Unexpected value returned for first_api_level: %s" % e)
+
+        if api_level == 0:
+            try:
+                api_level = int(self.dut.getProp("ro.build.version.sdk"))
+            except ValueError as e:
+                asserts.fail("Unexpected value returned from getprop: %s" % e)
+
         asserts.skipIf(
-                int(self.dut.first_api_level) <= ANDROID_O_MR1_API_VERSION,
+                int(api_level) <= ANDROID_O_MR1_API_VERSION,
                 "Skip test for a device which launched first before Android P.")
 
     def _ParsePropertyDictFromPropertyContextsFile(
