@@ -25,10 +25,8 @@ from vts.runners.host import base_test
 from vts.runners.host import const
 from vts.runners.host import keys
 from vts.runners.host import test_runner
-from vts.utils.python.controllers import android_device
 from vts.utils.python.file import target_file_utils
 
-ANDROID_O_MR1_API_VERSION = 27
 
 class VtsTrebleSysPropTest(base_test.BaseTestClass):
     """Test case which check compatibility of system property.
@@ -73,7 +71,7 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         """
         required_params = [keys.ConfigKeys.IKEY_DATA_FILE_PATH]
         self.getUserParams(required_params)
-        self.dut = self.registerController(android_device)[0]
+        self.dut = self.android_devices[0]
         self.dut.shell.InvokeTerminal( "TrebleSysPropTest")
         self.shell = self.dut.shell.TrebleSysPropTest
         self._temp_dir = tempfile.mkdtemp()
@@ -82,23 +80,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         """Deletes the temporary directory."""
         logging.info("Delete %s", self._temp_dir)
         shutil.rmtree(self._temp_dir)
-
-    def _SkipIfNeeded(self):
-        """Skips unless system property compatibility is enforced."""
-        try:
-            api_level = int(self.dut.first_api_level)
-        except ValueError as e:
-            asserts.fail("Unexpected value returned for first_api_level: %s" % e)
-
-        if api_level == 0:
-            try:
-                api_level = int(self.dut.getProp("ro.build.version.sdk"))
-            except ValueError as e:
-                asserts.fail("Unexpected value returned from getprop: %s" % e)
-
-        asserts.skipIf(
-                int(api_level) <= ANDROID_O_MR1_API_VERSION,
-                "Skip test for a device which launched first before Android P.")
 
     def _ParsePropertyDictFromPropertyContextsFile(
             self, property_contexts_file, exact_only=False):
@@ -129,8 +110,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         ro.actionable_compatible_property.enabled must be true to enforce the
         feature of actionable compatible property.
         """
-        self._SkipIfNeeded()
-
         asserts.assertEqual(
                 self.dut.getProp("ro.actionable_compatible_property.enabled"),
                 "true",
@@ -141,8 +120,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
 
         Vendor or ODM properties must have their own prefix.
         """
-        self._SkipIfNeeded()
-
         logging.info("Checking existence of %s",
                      self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH)
         target_file_utils.assertPermissionsAndExistence(
@@ -177,8 +154,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
 
         Public property contexts must not be modified.
         """
-        self._SkipIfNeeded()
-
         logging.info("Checking existence of %s",
                      self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH)
         target_file_utils.assertPermissionsAndExistence(
