@@ -72,8 +72,7 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         required_params = [keys.ConfigKeys.IKEY_DATA_FILE_PATH]
         self.getUserParams(required_params)
         self.dut = self.android_devices[0]
-        self.dut.shell.InvokeTerminal( "TrebleSysPropTest")
-        self.shell = self.dut.shell.TrebleSysPropTest
+        self.shell = self.dut.shell
         self._temp_dir = tempfile.mkdtemp()
 
     def tearDownClass(self):
