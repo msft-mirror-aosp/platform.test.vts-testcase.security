@@ -37,7 +37,11 @@ class SecurityPoCKernelTest(base_test.BaseTestClass):
         _dut: AndroidDevice, the device under test as config
         _testcases: string list, list of testcases to run
         _model: string, device model e.g. "Nexus 5X"
+        start_vts_agents: whether to start vts agents when registering new
+                          android devices.
     """
+    start_vts_agents = False
+
     def setUpClass(self):
         """Creates device under test instance, and copies data files."""
         required_params = [
@@ -50,7 +54,7 @@ class SecurityPoCKernelTest(base_test.BaseTestClass):
         logging.info("%s: %s", keys.ConfigKeys.IKEY_DATA_FILE_PATH,
                 self.data_file_path)
 
-        self._dut = self.registerController(android_device, False)[0]
+        self._dut = self.android_devices[0]
         self._testcases = config.POC_TEST_CASES_STABLE
         if self.run_staging:
             self._testcases += config.POC_TEST_CASES_STAGING
@@ -86,7 +90,7 @@ class SecurityPoCKernelTest(base_test.BaseTestClass):
         testcase_path = os.path.join(*testcase.split("/"))
         test_config_path = os.path.join(
             self.data_file_path, "vts", "testcases", "security", "poc",
-            "target", testcase_path, "poc.config")
+            "target", testcase_path, "poc.runner_conf")
 
         with open(test_config_path) as test_config_file:
             poc_config = json.load(test_config_file)["target_models"]
