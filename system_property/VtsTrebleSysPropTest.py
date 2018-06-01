@@ -53,6 +53,10 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
     _VENDOR_OR_ODM_NAMEPACES = [
             "ctl.odm.",
             "ctl.vendor.",
+            "ctl.start$odm.",
+            "ctl.start$vendor.",
+            "ctl.stop$odm.",
+            "ctl.stop$vendor.",
             "ro.boot.",
             "ro.hardware.",
             "ro.odm.",
