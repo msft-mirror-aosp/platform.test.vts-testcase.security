@@ -142,15 +142,20 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
                     property_contexts_file)
         logging.info("Found %d property names in vendor property contexts",
                      len(property_dict))
+        violation_list = []
         for name in property_dict:
             has_proper_namesapce = False
             for prefix in self._VENDOR_OR_ODM_NAMEPACES:
                 if name.startswith(prefix):
                     has_proper_namesapce = True
                     break
-            asserts.assertTrue(
-                    has_proper_namesapce,
-                    "Vendor property (%s) has wrong namespace" % name)
+            if not has_proper_namesapce:
+                violation_list.append(name)
+        asserts.assertEqual(
+                len(violation_list),
+                0,
+                ("Vendor propertes (%s) have wrong namespace" %
+                 (" ".join(sorted(violation_list)))))
 
     def testExportedPlatformPropertyIntegrity(self):
         """Ensures public property contexts isn't modified at all.
