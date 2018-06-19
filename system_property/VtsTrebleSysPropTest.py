@@ -118,45 +118,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
                 "true",
                 "ro.actionable_compatible_property.enabled must be true")
 
-    def testVendorPropertyNamespace(self):
-        """Ensures vendor properties have proper namespace.
-
-        Vendor or ODM properties must have their own prefix.
-        """
-        logging.info("Checking existence of %s",
-                     self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH)
-        target_file_utils.assertPermissionsAndExistence(
-                self.shell, self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH,
-                target_file_utils.IsReadable)
-
-        # Pull vendor property contexts file from device.
-        self.dut.adb.pull("%s %s" % (self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH,
-                                     self._temp_dir))
-        logging.info("Adb pull %s to %s",
-                     self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH,
-                     self._temp_dir)
-
-        with open(os.path.join(self._temp_dir, "vendor_property_contexts"),
-                  "r") as property_contexts_file:
-            property_dict = self._ParsePropertyDictFromPropertyContextsFile(
-                    property_contexts_file)
-        logging.info("Found %d property names in vendor property contexts",
-                     len(property_dict))
-        violation_list = []
-        for name in property_dict:
-            has_proper_namesapce = False
-            for prefix in self._VENDOR_OR_ODM_NAMEPACES:
-                if name.startswith(prefix):
-                    has_proper_namesapce = True
-                    break
-            if not has_proper_namesapce:
-                violation_list.append(name)
-        asserts.assertEqual(
-                len(violation_list),
-                0,
-                ("Vendor propertes (%s) have wrong namespace" %
-                 (" ".join(sorted(violation_list)))))
-
     def testExportedPlatformPropertyIntegrity(self):
         """Ensures public property contexts isn't modified at all.
 
