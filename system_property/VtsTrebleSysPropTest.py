@@ -25,10 +25,8 @@ from vts.runners.host import base_test
 from vts.runners.host import const
 from vts.runners.host import keys
 from vts.runners.host import test_runner
-from vts.utils.python.controllers import android_device
 from vts.utils.python.file import target_file_utils
 
-ANDROID_O_MR1_API_VERSION = 27
 
 class VtsTrebleSysPropTest(base_test.BaseTestClass):
     """Test case which check compatibility of system property.
@@ -43,6 +41,8 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
                                              contexts file.
         _VENDOR_OR_ODM_NAMEPACES: The namepsaces allowed for vendor/odm
                                   properties.
+        _MODIFIABLE_PROPERTIES: System properties modified officially after
+                                Android P release.
     """
 
     _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH = ("vts/testcases/security/"
@@ -55,6 +55,10 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
     _VENDOR_OR_ODM_NAMEPACES = [
             "ctl.odm.",
             "ctl.vendor.",
+            "ctl.start$odm.",
+            "ctl.start$vendor.",
+            "ctl.stop$odm.",
+            "ctl.stop$vendor.",
             "ro.boot.",
             "ro.hardware.",
             "ro.odm.",
@@ -63,6 +67,9 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
             "persist.odm.",
             "persist.vendor.",
             "vendor."
+    ]
+    _MODIFIABLE_PROPERTIES = [
+            "ro.telephony.default_network"
     ]
 
     def setUpClass(self):
@@ -81,12 +88,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         """Deletes the temporary directory."""
         logging.info("Delete %s", self._temp_dir)
         shutil.rmtree(self._temp_dir)
-
-    def _SkipIfNeeded(self):
-        """Skips unless system property compatibility is enforced."""
-        asserts.skipIf(
-                int(self.dut.first_api_level) <= ANDROID_O_MR1_API_VERSION,
-                "Skip test for a device which launched first before Android P.")
 
     def _ParsePropertyDictFromPropertyContextsFile(
             self, property_contexts_file, exact_only=False):
@@ -117,56 +118,16 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         ro.actionable_compatible_property.enabled must be true to enforce the
         feature of actionable compatible property.
         """
-        self._SkipIfNeeded()
-
         asserts.assertEqual(
                 self.dut.getProp("ro.actionable_compatible_property.enabled"),
                 "true",
                 "ro.actionable_compatible_property.enabled must be true")
-
-    def testVendorPropertyNamespace(self):
-        """Ensures vendor properties have proper namespace.
-
-        Vendor or ODM properties must have their own prefix.
-        """
-        self._SkipIfNeeded()
-
-        logging.info("Checking existence of %s",
-                     self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH)
-        target_file_utils.assertPermissionsAndExistence(
-                self.shell, self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH,
-                target_file_utils.IsReadable)
-
-        # Pull vendor property contexts file from device.
-        self.dut.adb.pull("%s %s" % (self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH,
-                                     self._temp_dir))
-        logging.info("Adb pull %s to %s",
-                     self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH,
-                     self._temp_dir)
-
-        with open(os.path.join(self._temp_dir, "vendor_property_contexts"),
-                  "r") as property_contexts_file:
-            property_dict = self._ParsePropertyDictFromPropertyContextsFile(
-                    property_contexts_file)
-        logging.info("Found %d property names in vendor property contexts",
-                     len(property_dict))
-        for name in property_dict:
-            has_proper_namesapce = False
-            for prefix in self._VENDOR_OR_ODM_NAMEPACES:
-                if name.startswith(prefix):
-                    has_proper_namesapce = True
-                    break
-            asserts.assertTrue(
-                    has_proper_namesapce,
-                    "Vendor property (%s) has wrong namespace" % name)
 
     def testExportedPlatformPropertyIntegrity(self):
         """Ensures public property contexts isn't modified at all.
 
         Public property contexts must not be modified.
         """
-        self._SkipIfNeeded()
-
         logging.info("Checking existence of %s",
                      self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH)
         target_file_utils.assertPermissionsAndExistence(
@@ -198,6 +159,8 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
             public_tokens = pub_property_dict[name]
             asserts.assertTrue(name in sys_property_dict,
                                "Exported property (%s) doesn't exist" % name)
+            if name in self._MODIFIABLE_PROPERTIES:
+                continue
             system_tokens = sys_property_dict[name]
             asserts.assertEqual(public_tokens, system_tokens,
                                 "Exported property (%s) is modified" % name)
