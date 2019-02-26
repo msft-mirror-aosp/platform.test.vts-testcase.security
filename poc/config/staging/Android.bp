@@ -14,25 +14,6 @@
 // limitations under the License.
 //
 
-cc_binary_host {
-
-    name: "VtsSecuritySelinuxPolicyHostTest",
-
-    srcs: ["main.cpp"],
-
-    include_dirs: [],
-
-    static_libs: [],
-
-    shared_libs: [],
-
-    cflags: [
-        "-Wall",
-        "-Werror",
-    ],
-
-}
-
 vts_config {
-    name: "VtsSecuritySelinuxPolicyHost",
+    name: "SecurityPoCKernelTestStaging",
 }
