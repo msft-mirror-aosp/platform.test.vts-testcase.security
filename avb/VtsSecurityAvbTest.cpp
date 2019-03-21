@@ -136,6 +136,15 @@ static std::unique_ptr<ShaHasher> CreateShaHasher(
   return nullptr;
 }
 
+// Calculates the digest of a block filled with 0.
+static bool CalculateZeroDigest(const ShaHasher &hasher, size_t size,
+                                const void *salt, int32_t block_length,
+                                uint8_t *digest) {
+  const std::vector<uint8_t> buffer(size, 0);
+  return hasher.CalculateDigest(buffer.data(), size, salt, block_length,
+                                digest);
+}
+
 // Logical structure of a hashtree:
 //
 // Level 2:                        [    root     ]
@@ -247,6 +256,12 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
     }
   }
 
+  std::vector<uint8_t> padded_zero_digest(padded_digest_size, 0);
+  if (!CalculateZeroDigest(hasher, data_block_size, salt.data(), salt.size(),
+                           padded_zero_digest.data())) {
+    return "CalculateZeroDigest fails";
+  }
+
   std::vector<uint8_t> data_block(data_block_size);
   std::vector<uint8_t> tree_block(hash_block_size);
   for (uint64_t image_offset = 0; image_offset < image_size;
@@ -289,6 +304,10 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
         break;
       }
       // Verify the full hash block
+      // current_block may point to tree_block. Since the following pread64
+      // changes tree_block, do not read current_block in the rest of this
+      // code block.
+      current_block = nullptr;
       read_size = TEMP_FAILURE_RETRY(
           pread64(image_fd, tree_block.data(), tree_block.size(),
                   tree_offset + level->comparing_tree_offset));
@@ -298,12 +317,23 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
             (unsigned long long)tree_offset + level->comparing_tree_offset);
       }
 
-      for (unsigned i = 0; i < tree_block.size(); i++) {
-        if (tree_block[i] != level->calculating_hash_block[i]) {
+      for (uint32_t offset = 0; offset < tree_block.size();
+           offset += padded_digest_size) {
+        // If the digest in the hashtree is equal to the digest of zero block,
+        // it indicates the corresponding data block is in DONT_CARE chunk in
+        // sparse image. The block should not be verified.
+        if (level == levels.begin() &&
+            memcmp(tree_block.data() + offset, padded_zero_digest.data(),
+                   padded_digest_size) == 0) {
+          continue;
+        }
+        if (memcmp(tree_block.data() + offset,
+                   level->calculating_hash_block.data() + offset,
+                   padded_digest_size) != 0) {
           return android::base::StringPrintf(
-              "Hash blocks mismatch, block offset = %llu, byte index = %u",
+              "Hash blocks mismatch, block offset = %llu, digest offset = %u",
               (unsigned long long)tree_offset + level->comparing_tree_offset,
-              i);
+              offset);
         }
       }
 
@@ -314,7 +344,7 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
       }
       // Prepare for next/upper level, to calculate the digest of this
       // hash_block for comparison
-      current_block = &level->calculating_hash_block;
+      current_block = &tree_block;
     }
   }
 
