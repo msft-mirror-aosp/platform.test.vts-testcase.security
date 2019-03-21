@@ -25,6 +25,7 @@ from vts.runners.host import base_test
 from vts.runners.host import const
 from vts.runners.host import keys
 from vts.runners.host import test_runner
+from vts.utils.python.android import api
 from vts.utils.python.file import target_file_utils
 
 
@@ -128,6 +129,10 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
 
         Vendor or ODM properties must have their own prefix.
         """
+        asserts.skipIf(
+                self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_P,
+                "Skip test for a device which launched first before Android Q.")
+
         logging.info("Checking existence of %s",
                      self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH)
         target_file_utils.assertPermissionsAndExistence(
