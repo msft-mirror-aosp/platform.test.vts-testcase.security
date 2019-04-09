@@ -34,27 +34,31 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
 
     Attributes:
         _temp_dir: The temporary directory to which necessary files are copied.
-        _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH: The path of public property
-                                             contexts file.
-        _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH: The path of system property
-                                             contexts file.
-        _VENDOR_PROPERTY_CONTEXTS_FILE_PATH: The path of vendor property
-                                             contexts file.
-        _ODM_PROPERTY_CONTEXTS_FILE_PATH:    The path of odm property
-                                             contexts file.
+        _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH:  The path of public property
+                                              contexts file.
+        _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH:  The path of system property
+                                              contexts file.
+        _PRODUCT_PROPERTY_CONTEXTS_FILE_PATH: The path of product property
+                                              contexts file.
+        _VENDOR_PROPERTY_CONTEXTS_FILE_PATH:  The path of vendor property
+                                              contexts file.
+        _ODM_PROPERTY_CONTEXTS_FILE_PATH:     The path of odm property
+                                              contexts file.
         _VENDOR_OR_ODM_NAMESPACES: The namepsaces allowed for vendor/odm
                                   properties.
     """
 
-    _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH = ("vts/testcases/security/"
-                                           "system_property/data/"
-                                           "property_contexts")
-    _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH = ("/system/etc/selinux/"
-                                           "plat_property_contexts")
-    _VENDOR_PROPERTY_CONTEXTS_FILE_PATH = ("/vendor/etc/selinux/"
-                                           "vendor_property_contexts")
-    _ODM_PROPERTY_CONTEXTS_FILE_PATH    = ("/odm/etc/selinux/"
-                                           "odm_property_contexts")
+    _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH  = ("vts/testcases/security/"
+                                            "system_property/data/"
+                                            "property_contexts")
+    _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH  = ("/system/etc/selinux/"
+                                            "plat_property_contexts")
+    _PRODUCT_PROPERTY_CONTEXTS_FILE_PATH = ("/product/etc/selinux/"
+                                            "product_property_contexts")
+    _VENDOR_PROPERTY_CONTEXTS_FILE_PATH  = ("/vendor/etc/selinux/"
+                                            "vendor_property_contexts")
+    _ODM_PROPERTY_CONTEXTS_FILE_PATH     = ("/odm/etc/selinux/"
+                                            "odm_property_contexts")
     _VENDOR_OR_ODM_NAMESPACES = [
             "ctl.odm.",
             "ctl.vendor.",
@@ -180,6 +184,50 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
 
         self._TestVendorOrOdmPropertyNamespace(
             "odm", self._ODM_PROPERTY_CONTEXTS_FILE_PATH)
+
+    def testProductPropertyNamespace(self):
+        """Ensures product properties have proper namespace.
+
+        Product properties must not have Vendor or ODM namespaces.
+        """
+        asserts.skipIf(
+            self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_P,
+            "Skip test for a device which launched first before Android Q.")
+
+        asserts.skipIf(
+            not target_file_utils.Exists(self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH,
+                                         self.shell),
+            "Skip test for a device which doesn't have an product property "
+            "contexts.")
+        logging.info("Checking existence of %s",
+                     self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH)
+        target_file_utils.assertPermissionsAndExistence(
+            self.shell, self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH,
+            target_file_utils.IsReadable)
+
+        # Pull product property contexts file from device.
+        self.dut.adb.pull(self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH,
+                          self._temp_dir)
+        logging.info("Adb pull %s to %s",
+                     self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH, self._temp_dir)
+
+        with open(os.path.join(self._temp_dir, "product_property_contexts"),
+                  "r") as property_contexts_file:
+            property_dict = self._ParsePropertyDictFromPropertyContextsFile(
+                property_contexts_file, True)
+        logging.info(
+            "Found %d property names in product property contexts",
+            len(sys_property_dict))
+
+        violation_list = filter(
+            lambda x: any(
+                x.startswith(prefix)
+                for prefix in self._VENDOR_OR_ODM_NAMESPACES),
+            property_dict.keys())
+        asserts.assertEqual(
+            len(violation_list), 0,
+            ("product propertes (%s) have wrong namespace" %
+             " ".join(sorted(violation_list))))
 
     def testExportedPlatformPropertyIntegrity(self):
         """Ensures public property contexts isn't modified at all.
