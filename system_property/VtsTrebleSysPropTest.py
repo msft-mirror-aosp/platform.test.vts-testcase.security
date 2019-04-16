@@ -25,6 +25,7 @@ from vts.runners.host import base_test
 from vts.runners.host import const
 from vts.runners.host import keys
 from vts.runners.host import test_runner
+from vts.utils.python.android import api
 from vts.utils.python.file import target_file_utils
 
 
@@ -33,26 +34,34 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
 
     Attributes:
         _temp_dir: The temporary directory to which necessary files are copied.
-        _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH: The path of public property
-                                             contexts file.
-        _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH: The path of system property
-                                             contexts file.
-        _VENDOR_PROPERTY_CONTEXTS_FILE_PATH: The path of vendor property
-                                             contexts file.
-        _VENDOR_OR_ODM_NAMEPACES: The namepsaces allowed for vendor/odm
+        _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH:  The path of public property
+                                              contexts file.
+        _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH:  The path of system property
+                                              contexts file.
+        _PRODUCT_PROPERTY_CONTEXTS_FILE_PATH: The path of product property
+                                              contexts file.
+        _VENDOR_PROPERTY_CONTEXTS_FILE_PATH:  The path of vendor property
+                                              contexts file.
+        _ODM_PROPERTY_CONTEXTS_FILE_PATH:     The path of odm property
+                                              contexts file.
+        _VENDOR_OR_ODM_NAMESPACES: The namepsaces allowed for vendor/odm
                                   properties.
         _MODIFIABLE_PROPERTIES: System properties modified officially after
                                 Android P release.
     """
 
-    _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH = ("vts/testcases/security/"
-                                           "system_property/data/"
-                                           "property_contexts")
-    _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH = ("/system/etc/selinux/"
-                                           "plat_property_contexts")
-    _VENDOR_PROPERTY_CONTEXTS_FILE_PATH = ("/vendor/etc/selinux/"
-                                           "vendor_property_contexts")
-    _VENDOR_OR_ODM_NAMEPACES = [
+    _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH  = ("vts/testcases/security/"
+                                            "system_property/data/"
+                                            "property_contexts")
+    _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH  = ("/system/etc/selinux/"
+                                            "plat_property_contexts")
+    _PRODUCT_PROPERTY_CONTEXTS_FILE_PATH = ("/product/etc/selinux/"
+                                            "product_property_contexts")
+    _VENDOR_PROPERTY_CONTEXTS_FILE_PATH  = ("/vendor/etc/selinux/"
+                                            "vendor_property_contexts")
+    _ODM_PROPERTY_CONTEXTS_FILE_PATH     = ("/odm/etc/selinux/"
+                                            "odm_property_contexts")
+    _VENDOR_OR_ODM_NAMESPACES = [
             "ctl.odm.",
             "ctl.vendor.",
             "ctl.start$odm.",
@@ -89,8 +98,9 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         logging.info("Delete %s", self._temp_dir)
         shutil.rmtree(self._temp_dir)
 
-    def _ParsePropertyDictFromPropertyContextsFile(
-            self, property_contexts_file, exact_only=False):
+    def _ParsePropertyDictFromPropertyContextsFile(self,
+                                                   property_contexts_file,
+                                                   exact_only=False):
         """Parse property contexts file to a dictionary.
 
         Args:
@@ -119,9 +129,110 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         feature of actionable compatible property.
         """
         asserts.assertEqual(
-                self.dut.getProp("ro.actionable_compatible_property.enabled"),
-                "true",
-                "ro.actionable_compatible_property.enabled must be true")
+            self.dut.getProp("ro.actionable_compatible_property.enabled"),
+            "true", "ro.actionable_compatible_property.enabled must be true")
+
+    def _TestVendorOrOdmPropertyNamespace(self, partition, contexts_path):
+        logging.info("Checking existence of %s", contexts_path)
+        target_file_utils.assertPermissionsAndExistence(
+            self.shell, contexts_path, target_file_utils.IsReadable)
+
+        # Pull property contexts file from device.
+        self.dut.adb.pull(contexts_path, self._temp_dir)
+        logging.info("Adb pull %s to %s", contexts_path, self._temp_dir)
+
+        with open(
+                os.path.join(self._temp_dir,
+                             "%s_property_contexts" % partition),
+                "r") as property_contexts_file:
+            property_dict = self._ParsePropertyDictFromPropertyContextsFile(
+                property_contexts_file)
+        logging.info("Found %d property names in %s property contexts",
+                     len(property_dict), partition)
+        violation_list = filter(
+            lambda x: not any(
+                x.startswith(prefix)
+                for prefix in self._VENDOR_OR_ODM_NAMESPACES),
+            property_dict.keys())
+        asserts.assertEqual(
+            len(violation_list), 0,
+            ("%s propertes (%s) have wrong namespace" %
+             (partition, " ".join(sorted(violation_list)))))
+
+    def testVendorPropertyNamespace(self):
+        """Ensures vendor properties have proper namespace.
+
+        Vendor or ODM properties must have their own prefix.
+        """
+        asserts.skipIf(
+            self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_P,
+            "Skip test for a device which launched first before Android Q.")
+
+        self._TestVendorOrOdmPropertyNamespace(
+            "vendor", self._VENDOR_PROPERTY_CONTEXTS_FILE_PATH)
+
+
+    def testOdmPropertyNamespace(self):
+        """Ensures odm properties have proper namespace.
+
+        Vendor or ODM properties must have their own prefix.
+        """
+        asserts.skipIf(
+            self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_P,
+            "Skip test for a device which launched first before Android Q.")
+
+        asserts.skipIf(
+            not target_file_utils.Exists(self._ODM_PROPERTY_CONTEXTS_FILE_PATH,
+                                         self.shell),
+            "Skip test for a device which doesn't have an odm property "
+            "contexts.")
+
+        self._TestVendorOrOdmPropertyNamespace(
+            "odm", self._ODM_PROPERTY_CONTEXTS_FILE_PATH)
+
+    def testProductPropertyNamespace(self):
+        """Ensures product properties have proper namespace.
+
+        Product properties must not have Vendor or ODM namespaces.
+        """
+        asserts.skipIf(
+            self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_P,
+            "Skip test for a device which launched first before Android Q.")
+
+        asserts.skipIf(
+            not target_file_utils.Exists(self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH,
+                                         self.shell),
+            "Skip test for a device which doesn't have an product property "
+            "contexts.")
+        logging.info("Checking existence of %s",
+                     self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH)
+        target_file_utils.assertPermissionsAndExistence(
+            self.shell, self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH,
+            target_file_utils.IsReadable)
+
+        # Pull product property contexts file from device.
+        self.dut.adb.pull(self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH,
+                          self._temp_dir)
+        logging.info("Adb pull %s to %s",
+                     self._PRODUCT_PROPERTY_CONTEXTS_FILE_PATH, self._temp_dir)
+
+        with open(os.path.join(self._temp_dir, "product_property_contexts"),
+                  "r") as property_contexts_file:
+            property_dict = self._ParsePropertyDictFromPropertyContextsFile(
+                property_contexts_file, True)
+        logging.info(
+            "Found %d property names in product property contexts",
+            len(sys_property_dict))
+
+        violation_list = filter(
+            lambda x: any(
+                x.startswith(prefix)
+                for prefix in self._VENDOR_OR_ODM_NAMESPACES),
+            property_dict.keys())
+        asserts.assertEqual(
+            len(violation_list), 0,
+            ("product propertes (%s) have wrong namespace" %
+             " ".join(sorted(violation_list))))
 
     def testExportedPlatformPropertyIntegrity(self):
         """Ensures public property contexts isn't modified at all.
@@ -131,29 +242,29 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
         logging.info("Checking existence of %s",
                      self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH)
         target_file_utils.assertPermissionsAndExistence(
-                self.shell, self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH,
-                target_file_utils.IsReadable)
+            self.shell, self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH,
+            target_file_utils.IsReadable)
 
         # Pull system property contexts file from device.
-        self.dut.adb.pull("%s %s" % (self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH,
-                                     self._temp_dir))
+        self.dut.adb.pull(self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH,
+                          self._temp_dir)
         logging.info("Adb pull %s to %s",
-                     self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH,
-                     self._temp_dir)
+                     self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH, self._temp_dir)
 
         with open(os.path.join(self._temp_dir, "plat_property_contexts"),
                   "r") as property_contexts_file:
             sys_property_dict = self._ParsePropertyDictFromPropertyContextsFile(
-                    property_contexts_file, True)
-        logging.info("Found %d exact-matching properties "
-                     "in system property contexts", len(sys_property_dict))
+                property_contexts_file, True)
+        logging.info(
+            "Found %d exact-matching properties "
+            "in system property contexts", len(sys_property_dict))
 
         pub_property_contexts_file_path = os.path.join(
-                self.data_file_path, self._PUBLIC_PROPERTY_CONTEXTS_FILE_PATH)
+            self.data_file_path, self._PUBLIC_PROPERTY_CONTEXTS_FILE_PATH)
         with open(pub_property_contexts_file_path,
                   "r") as property_contexts_file:
             pub_property_dict = self._ParsePropertyDictFromPropertyContextsFile(
-                    property_contexts_file, True)
+                property_contexts_file, True)
 
         for name in pub_property_dict:
             public_tokens = pub_property_dict[name]
