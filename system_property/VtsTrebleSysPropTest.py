@@ -46,8 +46,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
                                               contexts file.
         _VENDOR_OR_ODM_NAMESPACES: The namepsaces allowed for vendor/odm
                                   properties.
-        _MODIFIABLE_PROPERTIES: System properties modified officially after
-                                Android P release.
     """
 
     _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH  = ("vts/testcases/security/"
@@ -76,9 +74,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
             "persist.odm.",
             "persist.vendor.",
             "vendor."
-    ]
-    _MODIFIABLE_PROPERTIES = [
-            "ro.telephony.default_network"
     ]
 
     def setUpClass(self):
@@ -270,8 +265,6 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
             public_tokens = pub_property_dict[name]
             asserts.assertTrue(name in sys_property_dict,
                                "Exported property (%s) doesn't exist" % name)
-            if name in self._MODIFIABLE_PROPERTIES:
-                continue
             system_tokens = sys_property_dict[name]
             asserts.assertEqual(public_tokens, system_tokens,
                                 "Exported property (%s) is modified" % name)
