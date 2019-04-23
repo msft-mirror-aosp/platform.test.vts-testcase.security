@@ -370,24 +370,24 @@ TEST(AvbTest, SystemHashtree) {
   const std::string system_path(system_fstab_entry->blk_device);
   ALOGI("System partition is %s", system_path.c_str());
 
-  // TODO(b/65470881): Add the expected key to VTS package.
-  std::string expected_key_blob_4096;
+  std::string expected_key_blob;
   EXPECT_TRUE(android::base::ReadFileToString("/data/local/tmp/gsi.avbpubkey",
-                                              &expected_key_blob_4096));
+                                              &expected_key_blob));
 
   std::string out_public_key_data;
   std::string out_avb_partition_name;
   android::fs_mgr::VBMetaVerifyResult verify_result;
   std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
       android::fs_mgr::LoadAndVerifyVbmeta(
-          *system_fstab_entry, expected_key_blob_4096, &out_public_key_data,
+          *system_fstab_entry, expected_key_blob, &out_public_key_data,
           &out_avb_partition_name, &verify_result);
   ASSERT_TRUE(vbmeta) << "LoadAndVerifyVbmeta fails";
 
-  // TODO(b/65470881): Add the expected key to VTS package.
-  if (verify_result != android::fs_mgr::VBMetaVerifyResult::kSuccess) {
-    ALOGW("Vbmeta verification error");
-  }
+  // TODO: Skip assertion when running with non-compliance configuration.
+  EXPECT_EQ(verify_result, android::fs_mgr::VBMetaVerifyResult::kSuccess);
+  EXPECT_NE(verify_result,
+            android::fs_mgr::VBMetaVerifyResult::kErrorVerification)
+      << "The system image is not an officially signed GSI.";
 
   std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor> descriptor =
       android::fs_mgr::GetHashtreeDescriptor("system", std::move(*vbmeta));
