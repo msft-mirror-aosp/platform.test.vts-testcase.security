@@ -18,10 +18,14 @@
 
 #include <unistd.h>
 
+#include <array>
 #include <list>
+#include <map>
+#include <set>
 #include <vector>
 
 #include <android-base/file.h>
+#include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
 #include <fs_avb/fs_avb_util.h>
@@ -29,6 +33,7 @@
 #include <fstab/fstab.h>
 #include <gtest/gtest.h>
 #include <libavb/libavb.h>
+#include <libdm/dm.h>
 #include <log/log.h>
 #include <openssl/sha.h>
 
@@ -134,6 +139,15 @@ static std::unique_ptr<ShaHasher> CreateShaHasher(
         SHA512_Init, SHA512_Update, SHA512_Final, SHA512_DIGEST_LENGTH);
   }
   return nullptr;
+}
+
+// Calculates the digest of a block filled with 0.
+static bool CalculateZeroDigest(const ShaHasher &hasher, size_t size,
+                                const void *salt, int32_t block_length,
+                                uint8_t *digest) {
+  const std::vector<uint8_t> buffer(size, 0);
+  return hasher.CalculateDigest(buffer.data(), size, salt, block_length,
+                                digest);
 }
 
 // Logical structure of a hashtree:
@@ -247,6 +261,12 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
     }
   }
 
+  std::vector<uint8_t> padded_zero_digest(padded_digest_size, 0);
+  if (!CalculateZeroDigest(hasher, data_block_size, salt.data(), salt.size(),
+                           padded_zero_digest.data())) {
+    return "CalculateZeroDigest fails";
+  }
+
   std::vector<uint8_t> data_block(data_block_size);
   std::vector<uint8_t> tree_block(hash_block_size);
   for (uint64_t image_offset = 0; image_offset < image_size;
@@ -289,6 +309,10 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
         break;
       }
       // Verify the full hash block
+      // current_block may point to tree_block. Since the following pread64
+      // changes tree_block, do not read current_block in the rest of this
+      // code block.
+      current_block = nullptr;
       read_size = TEMP_FAILURE_RETRY(
           pread64(image_fd, tree_block.data(), tree_block.size(),
                   tree_offset + level->comparing_tree_offset));
@@ -298,12 +322,23 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
             (unsigned long long)tree_offset + level->comparing_tree_offset);
       }
 
-      for (unsigned i = 0; i < tree_block.size(); i++) {
-        if (tree_block[i] != level->calculating_hash_block[i]) {
+      for (uint32_t offset = 0; offset < tree_block.size();
+           offset += padded_digest_size) {
+        // If the digest in the hashtree is equal to the digest of zero block,
+        // it indicates the corresponding data block is in DONT_CARE chunk in
+        // sparse image. The block should not be verified.
+        if (level == levels.begin() &&
+            memcmp(tree_block.data() + offset, padded_zero_digest.data(),
+                   padded_digest_size) == 0) {
+          continue;
+        }
+        if (memcmp(tree_block.data() + offset,
+                   level->calculating_hash_block.data() + offset,
+                   padded_digest_size) != 0) {
           return android::base::StringPrintf(
-              "Hash blocks mismatch, block offset = %llu, byte index = %u",
+              "Hash blocks mismatch, block offset = %llu, digest offset = %u",
               (unsigned long long)tree_offset + level->comparing_tree_offset,
-              i);
+              offset);
         }
       }
 
@@ -314,7 +349,7 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
       }
       // Prepare for next/upper level, to calculate the digest of this
       // hash_block for comparison
-      current_block = &level->calculating_hash_block;
+      current_block = &tree_block;
     }
   }
 
@@ -324,43 +359,103 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
   return "";
 }
 
-// Loads contents and metadata of logical system partition, calculates
-// the hashtree, and compares with the metadata.
-TEST(AvbTest, SystemHashtree) {
+// Reads GSI public key from the path specified in VTS configuration.
+//
+// Returns:
+//   The GSI public key read from the path.
+//   An empty string if any file operation fails.
+static std::string ReadGsiPublicKey() {
+  std::string key_blob;
+  if (android::base::ReadFileToString("/data/local/tmp/gsi.avbpubkey",
+                                      &key_blob)) {
+    return key_blob;
+  }
+  return "";
+}
+
+// Converts descriptor.hash_algorithm to std::string.
+static std::string GetHashAlgorithm(const AvbHashtreeDescriptor &descriptor) {
+  return std::string(reinterpret_cast<const char *>(descriptor.hash_algorithm));
+}
+
+// Gets the system partition's AvbHashtreeDescriptor and device file path.
+//
+// Arguments:
+//  expected_key_blob: The key to verify the system's vbmeta.
+//  out_verify_result: The result of vbmeta verification.
+//  out_system_path: The system's device file path.
+//
+// Returns:
+//   The pointer to the system's AvbHashtreeDescriptor.
+//   nullptr if any operation fails.
+static std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor>
+GetSystemHashtreeDescriptor(
+    const std::string &expected_key_blob,
+    android::fs_mgr::VBMetaVerifyResult *out_verify_result,
+    std::string *out_system_path) {
   android::fs_mgr::Fstab default_fstab;
   bool ok = ReadDefaultFstab(&default_fstab);
-  ASSERT_TRUE(ok) << "ReadDefaultFstab fails";
+  if (!ok) {
+    ALOGE("ReadDefaultFstab fails");
+    return nullptr;
+  }
   android::fs_mgr::FstabEntry *system_fstab_entry =
       GetEntryForPath(&default_fstab, "/system");
-  ASSERT_TRUE(system_fstab_entry);
+  if (system_fstab_entry == nullptr) {
+    ALOGE("GetEntryForPath fails");
+    return nullptr;
+  }
 
   ok = fs_mgr_update_logical_partition(system_fstab_entry);
-  ASSERT_TRUE(ok) << "fs_mgr_update_logical_partition fails";
+  if (!ok) {
+    ALOGE("fs_mgr_update_logical_partition fails");
+    return nullptr;
+  }
 
-  const std::string system_path(system_fstab_entry->blk_device);
-  ALOGI("System partition is %s", system_path.c_str());
-
-  // TODO(b/65470881): Add the expected key to VTS package.
-  std::string expected_key_blob_4096;
-  EXPECT_TRUE(android::base::ReadFileToString("/data/local/tmp/gsi.avbpubkey",
-                                              &expected_key_blob_4096));
+  CHECK(out_system_path != nullptr);
+  *out_system_path = system_fstab_entry->blk_device;
 
   std::string out_public_key_data;
   std::string out_avb_partition_name;
-  android::fs_mgr::VBMetaVerifyResult verify_result;
   std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
       android::fs_mgr::LoadAndVerifyVbmeta(
-          *system_fstab_entry, expected_key_blob_4096, &out_public_key_data,
-          &out_avb_partition_name, &verify_result);
-  ASSERT_TRUE(vbmeta) << "LoadAndVerifyVbmeta fails";
-
-  // TODO(b/65470881): Add the expected key to VTS package.
-  if (verify_result != android::fs_mgr::VBMetaVerifyResult::kSuccess) {
-    ALOGW("Vbmeta verification error");
+          *system_fstab_entry, expected_key_blob, &out_public_key_data,
+          &out_avb_partition_name, out_verify_result);
+  if (vbmeta == nullptr) {
+    ALOGE("LoadAndVerifyVbmeta fails");
+    return nullptr;
   }
 
   std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor> descriptor =
       android::fs_mgr::GetHashtreeDescriptor("system", std::move(*vbmeta));
+  if (descriptor == nullptr) {
+    ALOGE("GetHashtreeDescriptor fails");
+    return nullptr;
+  }
+
+  return descriptor;
+}
+
+// Loads contents and metadata of logical system partition, calculates
+// the hashtree, and compares with the metadata.
+TEST(AvbTest, SystemHashtree) {
+  std::string expected_key_blob = ReadGsiPublicKey();
+  EXPECT_NE(expected_key_blob, "") << "Fail to read expected GSI key.";
+
+  android::fs_mgr::VBMetaVerifyResult verify_result;
+  std::string system_path;
+  std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor> descriptor =
+      GetSystemHashtreeDescriptor(expected_key_blob, &verify_result,
+                                  &system_path);
+  ASSERT_TRUE(descriptor);
+
+  ALOGI("System partition is %s", system_path.c_str());
+
+  // TODO: Skip assertion when running with non-compliance configuration.
+  EXPECT_EQ(verify_result, android::fs_mgr::VBMetaVerifyResult::kSuccess);
+  EXPECT_NE(verify_result,
+            android::fs_mgr::VBMetaVerifyResult::kErrorVerification)
+      << "The system image is not an officially signed GSI.";
 
   const std::string &salt_str = descriptor->salt;
   const std::string &expected_digest_str = descriptor->root_digest;
@@ -368,23 +463,20 @@ TEST(AvbTest, SystemHashtree) {
   android::base::unique_fd fd(open(system_path.c_str(), O_RDONLY));
   ASSERT_GE(fd, 0) << "Fail to open system partition. Try 'adb root'.";
 
-  std::string hash_algorithm((const char *)descriptor->hash_algorithm,
-                             sizeof(descriptor->hash_algorithm) /
-                                 sizeof(descriptor->hash_algorithm[0]));
-  hash_algorithm = hash_algorithm.substr(0, hash_algorithm.find_first_of('\0'));
+  const std::string hash_algorithm(GetHashAlgorithm(*descriptor));
   ALOGI("hash_algorithm = %s", hash_algorithm.c_str());
 
   std::unique_ptr<ShaHasher> hasher = CreateShaHasher(hash_algorithm);
   ASSERT_TRUE(hasher);
 
   std::vector<uint8_t> salt, expected_digest;
-  ok = HexToBytes(salt_str, &salt);
+  bool ok = HexToBytes(salt_str, &salt);
   ASSERT_TRUE(ok) << "Invalid salt in descriptor: " << salt_str;
   ok = HexToBytes(expected_digest_str, &expected_digest);
   ASSERT_TRUE(ok) << "Invalid digest in descriptor: " << expected_digest_str;
   ASSERT_EQ(expected_digest.size(), hasher->GetDigestSize());
 
-  ALOGI("image_size = %llu\n", (unsigned long long)descriptor->image_size);
+  ALOGI("image_size = %llu", (unsigned long long)descriptor->image_size);
   ALOGI("data_block_size = %u", descriptor->data_block_size);
   ALOGI("hash_block_size = %u", descriptor->hash_block_size);
   ALOGI("tree_offset = %llu", (unsigned long long)descriptor->tree_offset);
@@ -395,4 +487,148 @@ TEST(AvbTest, SystemHashtree) {
       descriptor->hash_block_size, descriptor->tree_offset,
       descriptor->tree_size, *hasher, expected_digest);
   ASSERT_EQ(error_message, "");
+}
+
+// Finds the next word consisting of non-whitespace characters in a string.
+//
+// Arguments:
+//   str: The string to be searched for the next word.
+//   pos: The starting position to search for the next word.
+//        This function sets it to the past-the-end position of the word.
+//
+// Returns:
+//   The starting position of the word.
+//   If there is no next word, this function does not change pos and returns
+//   std::string::npos.
+static size_t NextWord(const std::string &str, size_t *pos) {
+  const char *whitespaces = " \t\r\n";
+  size_t start = str.find_first_not_of(whitespaces, *pos);
+  if (start == std::string::npos) {
+    return start;
+  }
+  *pos = str.find_first_of(whitespaces, start);
+  if (*pos == std::string::npos) {
+    *pos = str.size();
+  }
+  return start;
+}
+
+// Compares device mapper table with system hashtree descriptor.
+TEST(AvbTest, SystemDescriptor) {
+  // Get system hashtree descriptor.
+  std::string expected_key_blob = ReadGsiPublicKey();
+  EXPECT_NE(expected_key_blob, "") << "Fail to read expected GSI key.";
+
+  android::fs_mgr::VBMetaVerifyResult verify_result;
+  std::string system_path;
+  std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor> descriptor =
+      GetSystemHashtreeDescriptor(expected_key_blob, &verify_result,
+                                  &system_path);
+  ASSERT_TRUE(descriptor);
+
+  // TODO: Assert when running with compliance configuration.
+  // The SystemHashtree function asserts verify_result.
+  if (verify_result != android::fs_mgr::VBMetaVerifyResult::kSuccess) {
+    ALOGW("The system image is not an officially signed GSI.");
+  }
+
+  // Get device mapper table.
+  android::dm::DeviceMapper &device_mapper =
+      android::dm::DeviceMapper::Instance();
+  std::vector<android::dm::DeviceMapper::TargetInfo> table;
+  bool ok = device_mapper.GetTableInfo("system-verity", &table);
+  ASSERT_TRUE(ok) << "GetTableInfo fails";
+  ASSERT_EQ(table.size(), 1);
+  const android::dm::DeviceMapper::TargetInfo &target = table[0];
+  // Sample output:
+  // Device mapper table for system-verity:
+  // 0-1783288: verity, 1 253:0 253:0 4096 4096 222911 222911 sha1
+  // 6b2b46715a2d27c53cc7f91fe63ce798ff1f3df7
+  // 65bc99ca8e97379d4f7adc66664941acc0a8e682 10 restart_on_corruption
+  // ignore_zero_blocks use_fec_from_device 253:0 fec_blocks 224668 fec_start
+  // 224668 fec_roots 2
+  ALOGI("Device mapper table for system-verity:\n%llu-%llu: %s, %s",
+        target.spec.sector_start, target.spec.sector_start + target.spec.length,
+        target.spec.target_type, target.data.c_str());
+  EXPECT_EQ(strcmp(target.spec.target_type, "verity"), 0);
+
+  // Compare the target's positional parameters with the descriptor. Reference:
+  // https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity#mapping-table-for-verity-target
+  std::array<std::string, 10> descriptor_values = {
+      std::to_string(descriptor->dm_verity_version),
+      "",  // skip data_dev
+      "",  // skip hash_dev
+      std::to_string(descriptor->data_block_size),
+      std::to_string(descriptor->hash_block_size),
+      std::to_string(descriptor->image_size /
+                     descriptor->data_block_size),  // #blocks
+      std::to_string(descriptor->image_size /
+                     descriptor->data_block_size),  // hash_start
+      GetHashAlgorithm(*descriptor),
+      descriptor->root_digest,
+      descriptor->salt,
+  };
+
+  size_t next_pos = 0;
+  for (const std::string &descriptor_value : descriptor_values) {
+    size_t begin_pos = NextWord(target.data, &next_pos);
+    ASSERT_NE(begin_pos, std::string::npos);
+    if (!descriptor_value.empty()) {
+      EXPECT_EQ(target.data.compare(begin_pos, next_pos - begin_pos,
+                                    descriptor_value),
+                0);
+    }
+  }
+
+  // Compare the target's optional parameters with the descriptor.
+  unsigned long opt_param_count;
+  {
+    size_t begin_pos = NextWord(target.data, &next_pos);
+    ASSERT_NE(begin_pos, std::string::npos);
+    opt_param_count =
+        std::stoul(target.data.substr(begin_pos, next_pos - begin_pos));
+  }
+  // https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity#optional-parameters
+  std::set<std::string> opt_params = {
+      "check_at_most_once",
+      "ignore_corruption",
+      "ignore_zero_blocks",
+      "restart_on_corruption",
+  };
+  // https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity#optional-fec-forward-error-correction-parameters
+  std::map<std::string, std::string> opt_fec_params = {
+      {"fec_blocks", ""},
+      {"fec_roots", ""},
+      {"fec_start", ""},
+      {"use_fec_from_device", ""},
+  };
+
+  for (unsigned long i = 0; i < opt_param_count; i++) {
+    size_t begin_pos = NextWord(target.data, &next_pos);
+    ASSERT_NE(begin_pos, std::string::npos);
+    const std::string param_name(target.data, begin_pos, next_pos - begin_pos);
+    if (opt_fec_params.count(param_name)) {
+      i++;
+      ASSERT_LT(i, opt_param_count);
+      begin_pos = NextWord(target.data, &next_pos);
+      ASSERT_NE(begin_pos, std::string::npos);
+      opt_fec_params[param_name] =
+          target.data.substr(begin_pos, next_pos - begin_pos);
+    } else {
+      ASSERT_NE(opt_params.count(param_name), 0)
+          << "Unknown dm-verity target parameter: " << param_name;
+    }
+  }
+
+  EXPECT_EQ(opt_fec_params["fec_roots"],
+            std::to_string(descriptor->fec_num_roots));
+  EXPECT_EQ(
+      opt_fec_params["fec_blocks"],
+      std::to_string(descriptor->fec_offset / descriptor->data_block_size));
+  EXPECT_EQ(
+      opt_fec_params["fec_start"],
+      std::to_string(descriptor->fec_offset / descriptor->data_block_size));
+  // skip use_fec_from_device
+
+  ASSERT_EQ(NextWord(target.data, &next_pos), std::string::npos);
 }
