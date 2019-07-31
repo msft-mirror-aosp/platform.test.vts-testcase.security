@@ -44,8 +44,10 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
                                               contexts file.
         _ODM_PROPERTY_CONTEXTS_FILE_PATH:     The path of odm property
                                               contexts file.
-        _VENDOR_OR_ODM_NAMESPACES: The namepsaces allowed for vendor/odm
-                                  properties.
+        _VENDOR_OR_ODM_NAMESPACES: The namespaces allowed for vendor/odm
+                                   properties.
+        _VENDOR_OR_ODM_NAMESPACES_WHITELIST: The extra namespaces allowed for
+                                             vendor/odm properties.
         _VENDOR_TYPE_PREFIX: Expected prefix for the vendor prop types
         _ODM_TYPE_PREFIX: Expected prefix for the odm prop types
         _SYSTEM_WHITELISTED_TYPES: System props are not allowed to start with
@@ -80,6 +82,10 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
             "persist.odm.",
             "persist.vendor.",
             "vendor."
+    ]
+
+    _VENDOR_OR_ODM_NAMESPACES_WHITELIST = [
+            "persist.camera." # b/138545066 remove this
     ]
 
     _VENDOR_TYPE_PREFIX = "vendor_"
@@ -165,8 +171,8 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
                      len(property_dict), partition)
         violation_list = filter(
             lambda x: not any(
-                x.startswith(prefix)
-                for prefix in self._VENDOR_OR_ODM_NAMESPACES),
+                x.startswith(prefix) for prefix in
+                self._VENDOR_OR_ODM_NAMESPACES + self._VENDOR_OR_ODM_NAMESPACES_WHITELIST),
             property_dict.keys())
         asserts.assertEqual(
             len(violation_list), 0,
