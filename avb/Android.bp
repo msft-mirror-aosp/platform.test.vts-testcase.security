@@ -23,7 +23,7 @@ cc_defaults {
     ],
     static_libs: [
         "libavb",
-        "libcrypto",
+        "libcrypto_static",
         "libfs_avb",
         "libfs_mgr",
     ],
