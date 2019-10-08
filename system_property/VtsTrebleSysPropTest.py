@@ -266,7 +266,7 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
                 property_contexts_file, True)
         logging.info(
             "Found %d property names in product property contexts",
-            len(sys_property_dict))
+            len(property_dict))
 
         violation_list = filter(
             lambda x: any(
