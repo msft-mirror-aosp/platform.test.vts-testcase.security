@@ -18,7 +18,7 @@
     <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
         <option name="cleanup" value="true" />
         <option name="push" value="vts_security_avb_test->/data/local/tmp/vts_security_avb_test" />
-        <option name="push" value="q-gsi.avbpubkey->/data/local/tmp/gsi.avbpubkey" />
+        <option name="push" value="r-gsi.avbpubkey->/data/local/tmp/gsi.avbpubkey" />
     </target_preparer>
     <option name="test-suite-tag" value="vts-core" />
     <test class="com.android.tradefed.testtype.GTest" >
