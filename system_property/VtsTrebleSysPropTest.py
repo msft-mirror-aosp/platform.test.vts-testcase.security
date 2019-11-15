@@ -65,6 +65,8 @@ class VtsTrebleSysPropTest(base_test.BaseTestClass):
             "ctl.start$vendor.",
             "ctl.stop$odm.",
             "ctl.stop$vendor.",
+            "init.svc.odm.",
+            "init.svc.vendor.",
             "ro.boot.",
             "ro.hardware.",
             "ro.odm.",
