@@ -38,7 +38,9 @@ cc_test {
         "vts-core",
     ],
     data: [
+        ":q-gsi_avbpubkey",
         ":r-gsi_avbpubkey",
+        ":s-gsi_avbpubkey",
     ],
 }
 
