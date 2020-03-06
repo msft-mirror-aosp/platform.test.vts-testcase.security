@@ -359,29 +359,36 @@ static std::string VerifyHashtree(int image_fd, uint64_t image_size,
   return "";
 }
 
-// Reads GSI public key from the path specified in VTS configuration.
-//
-// Returns:
-//   The GSI public key read from the path.
-//   An empty string if any file operation fails.
-static std::string ReadGsiPublicKey() {
-  std::string key_blob;
-  if (android::base::ReadFileToString("/data/local/tmp/gsi.avbpubkey",
-                                      &key_blob)) {
-    return key_blob;
-  }
-  return "";
-}
-
 // Converts descriptor.hash_algorithm to std::string.
 static std::string GetHashAlgorithm(const AvbHashtreeDescriptor &descriptor) {
   return std::string(reinterpret_cast<const char *>(descriptor.hash_algorithm));
 }
 
+// Checks whether the public key is an official GSI key or not.
+static bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
+  if (key_blob_to_validate.empty()) {
+    ALOGE("Failed to validate an empty key");
+    return false;
+  }
+
+  std::string allowed_key_blob;
+  std::vector<std::string> allowed_key_paths = {
+      "/data/local/tmp/q-gsi.avbpubkey", "/data/local/tmp/r-gsi.avbpubkey",
+      "/data/local/tmp/s-gsi.avbpubkey"};
+  for (const auto &path : allowed_key_paths) {
+    if (android::base::ReadFileToString(path, &allowed_key_blob)) {
+      if (key_blob_to_validate == allowed_key_blob) {
+        ALOGE("Found matching GSI key: %s", path.c_str());
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // Gets the system partition's AvbHashtreeDescriptor and device file path.
 //
 // Arguments:
-//  expected_key_blob: The key to verify the system's vbmeta.
 //  out_verify_result: The result of vbmeta verification.
 //  out_system_path: The system's device file path.
 //
@@ -390,7 +397,6 @@ static std::string GetHashAlgorithm(const AvbHashtreeDescriptor &descriptor) {
 //   nullptr if any operation fails.
 static std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor>
 GetSystemHashtreeDescriptor(
-    const std::string &expected_key_blob,
     android::fs_mgr::VBMetaVerifyResult *out_verify_result,
     std::string *out_system_path) {
   android::fs_mgr::Fstab default_fstab;
@@ -419,10 +425,20 @@ GetSystemHashtreeDescriptor(
   std::string out_avb_partition_name;
   std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
       android::fs_mgr::LoadAndVerifyVbmeta(
-          *system_fstab_entry, expected_key_blob, &out_public_key_data,
+          *system_fstab_entry, "" /* expected_key_blob */, &out_public_key_data,
           &out_avb_partition_name, out_verify_result);
   if (vbmeta == nullptr) {
     ALOGE("LoadAndVerifyVbmeta fails");
+    return nullptr;
+  }
+
+  if (out_public_key_data.empty()) {
+    ALOGE("The GSI image is not signed");
+    return nullptr;
+  }
+
+  if (!ValidatePublicKeyBlob(out_public_key_data)) {
+    ALOGE("The GSI image is not signed by an official key");
     return nullptr;
   }
 
@@ -439,14 +455,10 @@ GetSystemHashtreeDescriptor(
 // Loads contents and metadata of logical system partition, calculates
 // the hashtree, and compares with the metadata.
 TEST(AvbTest, SystemHashtree) {
-  std::string expected_key_blob = ReadGsiPublicKey();
-  EXPECT_NE(expected_key_blob, "") << "Fail to read expected GSI key.";
-
   android::fs_mgr::VBMetaVerifyResult verify_result;
   std::string system_path;
   std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor> descriptor =
-      GetSystemHashtreeDescriptor(expected_key_blob, &verify_result,
-                                  &system_path);
+      GetSystemHashtreeDescriptor(&verify_result, &system_path);
   ASSERT_TRUE(descriptor);
 
   ALOGI("System partition is %s", system_path.c_str());
@@ -516,14 +528,11 @@ static size_t NextWord(const std::string &str, size_t *pos) {
 // Compares device mapper table with system hashtree descriptor.
 TEST(AvbTest, SystemDescriptor) {
   // Get system hashtree descriptor.
-  std::string expected_key_blob = ReadGsiPublicKey();
-  EXPECT_NE(expected_key_blob, "") << "Fail to read expected GSI key.";
 
   android::fs_mgr::VBMetaVerifyResult verify_result;
   std::string system_path;
   std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor> descriptor =
-      GetSystemHashtreeDescriptor(expected_key_blob, &verify_result,
-                                  &system_path);
+      GetSystemHashtreeDescriptor(&verify_result, &system_path);
   ASSERT_TRUE(descriptor);
 
   // TODO: Assert when running with compliance configuration.
