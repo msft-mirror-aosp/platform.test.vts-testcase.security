@@ -35,7 +35,7 @@ cc_test {
     test_config: "vts_security_avb_test.xml",
     test_suites: [
         "device-tests",
-        "vts-core",
+        "vts",
     ],
     data: [
         ":q-gsi_avbpubkey",
