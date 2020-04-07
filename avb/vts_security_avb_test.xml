@@ -22,7 +22,6 @@
         <option name="push" value="r-gsi.avbpubkey->/data/local/tmp/r-gsi.avbpubkey" />
         <option name="push" value="s-gsi.avbpubkey->/data/local/tmp/s-gsi.avbpubkey" />
     </target_preparer>
-    <option name="test-suite-tag" value="vts-core" />
     <test class="com.android.tradefed.testtype.GTest" >
         <option name="native-test-device-path" value="/data/local/tmp" />
         <option name="module-name" value="vts_security_avb_test" />
