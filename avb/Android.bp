@@ -14,8 +14,8 @@
 // limitations under the License.
 //
 
-cc_defaults {
-    name: "vts_security_avb_defaults",
+cc_test {
+    name: "VtsSecurityAvbTest",
     srcs: ["VtsSecurityAvbTest.cpp"],
     shared_libs: [
         "libbase",
@@ -23,28 +23,10 @@ cc_defaults {
     ],
     static_libs: [
         "libavb",
-        "libcrypto_static",
+        "libcrypto",
         "libfs_avb",
         "libfs_mgr",
     ],
-}
-
-cc_test {
-    name: "vts_security_avb_test",
-    defaults: ["vts_security_avb_defaults"],
-    test_config: "vts_security_avb_test.xml",
-    test_suites: [
-        "device-tests",
-        "vts-core",
-    ],
-    data: [
-        ":r-gsi_avbpubkey",
-    ],
-}
-
-cc_test {
-    name: "VtsSecurityAvbTest",
-    defaults: ["vts_security_avb_defaults"],
 }
 
 vts_config {
