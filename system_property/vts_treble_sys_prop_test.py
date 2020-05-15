@@ -331,11 +331,11 @@ class VtsTrebleSysPropTest(unittest.TestCase):
             "Found %d property names in product property contexts",
             len(property_dict))
 
-        violation_list = filter(
+        violation_list = list(filter(
             lambda x: any(
                 x.startswith(prefix)
                 for prefix in self._VENDOR_OR_ODM_NAMESPACES),
-            property_dict.keys())
+            property_dict.keys()))
         self.assertEqual(
             len(violation_list), 0,
             ("product propertes (%s) have wrong namespace" %
