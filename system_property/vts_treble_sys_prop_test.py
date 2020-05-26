@@ -115,7 +115,7 @@ class VtsTrebleSysPropTest(unittest.TestCase):
             "vendor_" or "odm_", but these are exceptions.
     """
 
-    _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH  = ("private/property_contexts")
+    _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH  = ("public/property_contexts")
     _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH  = ("/system/etc/selinux/"
                                             "plat_property_contexts")
     _PRODUCT_PROPERTY_CONTEXTS_FILE_PATH = ("/product/etc/selinux/"
