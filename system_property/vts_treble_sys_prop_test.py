@@ -153,7 +153,8 @@ class VtsTrebleSysPropTest(unittest.TestCase):
 
     _SYSTEM_WHITELISTED_TYPES = [
             "vendor_default_prop",
-            "vendor_security_patch_level_prop"
+            "vendor_security_patch_level_prop",
+            "vendor_socket_hook_prop"
     ]
 
     _VENDOR_OR_ODM_WHITELISTED_TYPES = [
@@ -371,6 +372,7 @@ class VtsTrebleSysPropTest(unittest.TestCase):
         if (not self.dut.Exists(self._ODM_PROPERTY_CONTEXTS_FILE_PATH)):
             logging.info("Skip test for a device which doesn't have an odm "
                          "property contexts.")
+            return
         self._TestPropertyTypes(
             self._ODM_PROPERTY_CONTEXTS_FILE_PATH,
             lambda typename: typename.startswith(self._VENDOR_TYPE_PREFIX) or
