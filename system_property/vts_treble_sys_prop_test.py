@@ -153,7 +153,8 @@ class VtsTrebleSysPropTest(unittest.TestCase):
 
     _SYSTEM_WHITELISTED_TYPES = [
             "vendor_default_prop",
-            "vendor_security_patch_level_prop"
+            "vendor_security_patch_level_prop",
+            "vendor_socket_hook_prop"
     ]
 
     _VENDOR_OR_ODM_WHITELISTED_TYPES = [
