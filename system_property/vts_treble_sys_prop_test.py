@@ -372,6 +372,7 @@ class VtsTrebleSysPropTest(unittest.TestCase):
         if (not self.dut.Exists(self._ODM_PROPERTY_CONTEXTS_FILE_PATH)):
             logging.info("Skip test for a device which doesn't have an odm "
                          "property contexts.")
+            return
         self._TestPropertyTypes(
             self._ODM_PROPERTY_CONTEXTS_FILE_PATH,
             lambda typename: typename.startswith(self._VENDOR_TYPE_PREFIX) or
