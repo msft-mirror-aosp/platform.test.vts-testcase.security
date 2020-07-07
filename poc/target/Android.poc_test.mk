@@ -39,6 +39,10 @@ LOCAL_C_INCLUDES := \
     $(poc_test_c_includes) \
     $(addprefix $(poc_test_dir)/,$(module_c_includes)) \
 
+LOCAL_HEADER_LIBRARIES := \
+    $(poc_test_header_libraries) \
+    $(module_header_libraries) \
+
 LOCAL_STATIC_LIBRARIES := \
     $(poc_test_static_libraries) \
     $(module_static_libraries) \
