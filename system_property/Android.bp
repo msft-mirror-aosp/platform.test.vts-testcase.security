@@ -14,10 +14,6 @@
 // limitations under the License.
 //
 
-vts_config {
-    name: "VtsTrebleSysProp",
-}
-
 python_test_host {
     name: "vts_treble_sys_prop_test",
     main: "vts_treble_sys_prop_test.py",
