@@ -48,7 +48,3 @@ cc_test {
     name: "VtsSecurityAvbTest",
     defaults: ["vts_security_avb_defaults"],
 }
-
-vts_config {
-    name: "VtsSecurityAvb",
-}
