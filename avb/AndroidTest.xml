@@ -21,6 +21,7 @@
         <option name="push" value="DATA/avb/q-gsi.avbpubkey->/data/local/tmp/q-gsi.avbpubkey" />
         <option name="push" value="DATA/avb/r-gsi.avbpubkey->/data/local/tmp/r-gsi.avbpubkey" />
         <option name="push" value="DATA/avb/s-gsi.avbpubkey->/data/local/tmp/s-gsi.avbpubkey" />
+        <option name="push" value="DATA/avb/qcar-gsi.avbpubkey->/data/local/tmp/qcar-gsi.avbpubkey" />
     </target_preparer>
     <test class="com.android.tradefed.testtype.VtsMultiDeviceTest">
         <option name="test-module-name" value="VtsSecurityAvb" />
