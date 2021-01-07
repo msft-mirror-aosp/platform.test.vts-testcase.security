@@ -380,7 +380,7 @@ static bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
   std::string allowed_key_blob;
   std::vector<std::string> allowed_key_paths = {
       "/data/local/tmp/q-gsi.avbpubkey", "/data/local/tmp/r-gsi.avbpubkey",
-      "/data/local/tmp/s-gsi.avbpubkey"};
+      "/data/local/tmp/s-gsi.avbpubkey", "/data/local/tmp/qcar-gsi.avbpubkey"};
   for (const auto &path : allowed_key_paths) {
     if (android::base::ReadFileToString(path, &allowed_key_blob)) {
       if (key_blob_to_validate == allowed_key_blob) {
