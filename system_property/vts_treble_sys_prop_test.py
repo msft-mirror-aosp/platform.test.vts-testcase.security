@@ -380,7 +380,7 @@ class VtsTrebleSysPropTest(unittest.TestCase):
         self._TestPropertyTypes(
             self._ODM_PROPERTY_CONTEXTS_FILE_PATH,
             lambda typename: typename.startswith(self._VENDOR_TYPE_PREFIX) or
-            typename.startswith(self._ODM_TYPEPREFIX) or
+            typename.startswith(self._ODM_TYPE_PREFIX) or
             typename in self._VENDOR_OR_ODM_WHITELISTED_TYPES)
 
     def testExportedPlatformPropertyIntegrity(self):

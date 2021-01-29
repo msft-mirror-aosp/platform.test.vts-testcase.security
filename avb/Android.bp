@@ -41,14 +41,11 @@ cc_test {
         ":q-gsi_avbpubkey",
         ":r-gsi_avbpubkey",
         ":s-gsi_avbpubkey",
+        ":qcar-gsi_avbpubkey",
     ],
 }
 
 cc_test {
     name: "VtsSecurityAvbTest",
     defaults: ["vts_security_avb_defaults"],
-}
-
-vts_config {
-    name: "VtsSecurityAvb",
 }
