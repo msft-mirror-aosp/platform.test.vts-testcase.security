@@ -380,7 +380,7 @@ static bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
   std::string allowed_key_blob;
   std::vector<std::string> allowed_key_paths = {
       "/data/local/tmp/q-gsi.avbpubkey", "/data/local/tmp/r-gsi.avbpubkey",
-      "/data/local/tmp/s-gsi.avbpubkey"};
+      "/data/local/tmp/s-gsi.avbpubkey", "/data/local/tmp/qcar-gsi.avbpubkey"};
   for (const auto &path : allowed_key_paths) {
     if (android::base::ReadFileToString(path, &allowed_key_blob)) {
       if (key_blob_to_validate == allowed_key_blob) {
@@ -458,6 +458,24 @@ GetSystemHashtreeDescriptor(
   return descriptor;
 }
 
+// Returns true iff the device has the specified feature.
+bool DeviceSupportsFeature(const char *feature) {
+  bool device_supports_feature = false;
+  FILE *p = popen("pm list features", "re");
+  if (p) {
+    char *line = NULL;
+    size_t len = 0;
+    while (getline(&line, &len, p) > 0) {
+      if (strstr(line, feature)) {
+        device_supports_feature = true;
+        break;
+      }
+    }
+    pclose(p);
+  }
+  return device_supports_feature;
+}
+
 TEST(AvbTest, Boot) {
   /* Skip for devices running kernels older than 5.4. */
   struct utsname buf;
@@ -470,6 +488,13 @@ TEST(AvbTest, Boot) {
   ASSERT_GE(ret, 2) << "Failed to parse kernel version.";
   if (kernel_version_major < 5 ||
       (kernel_version_major == 5 && kernel_version_minor < 4)) {
+    return;
+  }
+
+  /* Skip for form factors that do not mandate GKI yet */
+  const static bool tv_device =
+      DeviceSupportsFeature("android.software.leanback");
+  if (tv_device) {
     return;
   }
 
