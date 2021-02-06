@@ -23,6 +23,8 @@ module_name := $(notdir $(module_testname))
 module_path := security/poc/$(dir $(module_testname))
 
 LOCAL_MODULE := $(module_name)
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
 LOCAL_MODULE_STEM := $(module_name)
 LOCAL_MODULE_PATH := $(TARGET_OUT_DATA_NATIVE_TESTS)/$(module_path)
 LOCAL_MODULE_TAGS := optional
