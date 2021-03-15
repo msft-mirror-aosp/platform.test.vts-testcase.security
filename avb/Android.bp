@@ -26,6 +26,7 @@ cc_defaults {
         "liblog",
     ],
     static_libs: [
+        "libavb_user",
         "libavb",
         "libcrypto_static",
         "libfs_avb",
