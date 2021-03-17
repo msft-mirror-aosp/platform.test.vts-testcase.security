@@ -27,6 +27,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
 #include <fs_avb/fs_avb_util.h>
@@ -34,6 +35,7 @@
 #include <fstab/fstab.h>
 #include <gtest/gtest.h>
 #include <libavb/libavb.h>
+#include <libavb_user/avb_ops_user.h>
 #include <libdm/dm.h>
 #include <log/log.h>
 #include <openssl/sha.h>
@@ -749,4 +751,94 @@ TEST(AvbTest, SystemDescriptor) {
   // skip use_fec_from_device
 
   ASSERT_EQ(NextWord(target.data, &next_pos), std::string::npos);
+}
+
+static int getFirstApiLevel() {
+  int level = android::base::GetIntProperty("ro.product.first_api_level", 0);
+  if (level == 0) {
+    level = android::base::GetIntProperty("ro.build.version.sdk", 0);
+  }
+  if (level == 0) {
+    ADD_FAILURE() << "Failed to determine first API level";
+  }
+  return level;
+}
+
+static void VerifyHashAlgorithm(const AvbHashtreeDescriptor* descriptor) {
+  AvbHashtreeDescriptor hashtree_descriptor;
+  ASSERT_TRUE(avb_hashtree_descriptor_validate_and_byteswap(
+      descriptor, &hashtree_descriptor))
+      << "hash tree descriptor is invalid.";
+
+  auto partition_name_ptr = reinterpret_cast<const uint8_t*>(descriptor) +
+                            sizeof(AvbHashtreeDescriptor);
+  std::string partition_name(
+      partition_name_ptr,
+      partition_name_ptr + hashtree_descriptor.partition_name_len);
+
+  if (avb_strcmp(
+          reinterpret_cast<const char*>(hashtree_descriptor.hash_algorithm),
+          "sha1") == 0) {
+    FAIL() << "The hash tree algorithm cannot be SHA1 for partition "
+           << partition_name;
+  }
+}
+
+static void LoadAndVerifyAvbSlotDataForCurrentSlot(
+    AvbSlotVerifyData** avb_slot_data) {
+  // Use an empty suffix string for non-A/B devices.
+  std::string suffix;
+  if (android::base::GetBoolProperty("ro.build.ab_update", false)) {
+    suffix = android::base::GetProperty("ro.boot.slot_suffix", "");
+    ASSERT_TRUE(!suffix.empty()) << "Failed to get suffix for the current slot";
+  }
+
+  const char* requested_partitions[] = {nullptr};
+
+  auto avb_ops = avb_ops_user_new();
+  auto verify_result = avb_slot_verify(
+      avb_ops, requested_partitions, suffix.c_str(), AVB_SLOT_VERIFY_FLAGS_NONE,
+      AVB_HASHTREE_ERROR_MODE_EIO, avb_slot_data);
+  ASSERT_EQ(AVB_SLOT_VERIFY_RESULT_OK, verify_result)
+      << "Failed to verify avb slot data " << verify_result;
+}
+
+// Check the correct hashtree algorithm is used.
+TEST(AvbTest, HashtreeAlgorithm) {
+  constexpr auto S_API_LEVEL = 31;
+
+  int first_api_level = getFirstApiLevel();
+  GTEST_LOG_(INFO) << "First API level is " << first_api_level;
+  if (first_api_level < S_API_LEVEL) {
+    GTEST_LOG_(INFO)
+        << "Exempt from avb hash tree test due to old starting API level";
+    return;
+  }
+
+  // Note we don't iterate the entries in fstab; because we don't know if a
+  // partition uses hashtree or not.
+  AvbSlotVerifyData* avb_slot_data;
+  LoadAndVerifyAvbSlotDataForCurrentSlot(&avb_slot_data);
+  ASSERT_NE(nullptr, avb_slot_data) << "Failed to load avb slot verify data";
+  std::unique_ptr<AvbSlotVerifyData, decltype(&avb_slot_verify_data_free)>
+      scope_guard(avb_slot_data, avb_slot_verify_data_free);
+
+  // Iterate over the loaded vbmeta structs
+  for (size_t i = 0; i < avb_slot_data->num_vbmeta_images; i++) {
+    std::string partition_name = avb_slot_data->vbmeta_images[i].partition_name;
+    const auto& vbmeta_image = avb_slot_data->vbmeta_images[i];
+
+    size_t num_descriptors;
+    auto descriptors = avb_descriptor_get_all(
+        vbmeta_image.vbmeta_data, vbmeta_image.vbmeta_size, &num_descriptors);
+    // Iterate over the hashtree descriptors
+    for (size_t n = 0; n < num_descriptors; n++) {
+      if (avb_be64toh(descriptors[n]->tag) != AVB_DESCRIPTOR_TAG_HASHTREE) {
+        continue;
+      }
+
+      VerifyHashAlgorithm(
+          reinterpret_cast<const AvbHashtreeDescriptor*>(descriptors[n]));
+    }
+  }
 }
