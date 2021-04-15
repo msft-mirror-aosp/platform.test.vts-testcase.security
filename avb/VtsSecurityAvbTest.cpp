@@ -23,13 +23,16 @@
 #include <list>
 #include <map>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
+#include <android-base/result.h>
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
+#include <bootimg.h>
 #include <fs_avb/fs_avb_util.h>
 #include <fs_mgr/roots.h>
 #include <fstab/fstab.h>
@@ -39,6 +42,9 @@
 #include <libdm/dm.h>
 #include <log/log.h>
 #include <openssl/sha.h>
+
+using android::base::Error;
+using android::base::Result;
 
 static uint8_t HexDigitToByte(char c) {
   if (c >= '0' && c <= '9') {
@@ -478,30 +484,116 @@ bool DeviceSupportsFeature(const char *feature) {
   return device_supports_feature;
 }
 
-TEST(AvbTest, Boot) {
-  /* Skip for devices running kernels older than 5.4. */
-  struct utsname buf;
-  int ret, kernel_version_major, kernel_version_minor;
-  ret = uname(&buf);
-  ASSERT_EQ(ret, 0) << "Failed to get kernel version.";
-  char dummy;
-  ret = sscanf(buf.release, "%d.%d%c", &kernel_version_major,
-               &kernel_version_minor, &dummy);
-  ASSERT_GE(ret, 2) << "Failed to parse kernel version.";
-  if (kernel_version_major < 5 ||
-      (kernel_version_major == 5 && kernel_version_minor < 4)) {
-    return;
+static int GetFirstApiLevel() {
+  int level = android::base::GetIntProperty("ro.product.first_api_level", 0);
+  if (level == 0) {
+    level = android::base::GetIntProperty("ro.build.version.sdk", 0);
   }
+  if (level == 0) {
+    ADD_FAILURE() << "Failed to determine first API level";
+  }
+  return level;
+}
 
-  /* Skip for non arm64 that do not mandate GKI yet. */
-  if (strcmp(buf.machine, "aarch64") != 0) {
-    return;
+bool ShouldSkipGkiTest() {
+  /* Skip for devices launched before Android R. */
+  constexpr auto R_API_LEVEL = 30;
+  int first_api_level = GetFirstApiLevel();
+  GTEST_LOG_(INFO) << "First API level is " << first_api_level;
+  if (first_api_level < R_API_LEVEL) {
+    GTEST_LOG_(INFO) << "Exempt from GKI test due to old starting API level";
+    return true;
   }
 
   /* Skip for form factors that do not mandate GKI yet */
   const static bool tv_device =
       DeviceSupportsFeature("android.software.leanback");
   if (tv_device) {
+    GTEST_LOG_(INFO) << "Exempt from GKI test on TV devices";
+    return true;
+  }
+
+  return false;
+}
+
+// Returns a tuple of (version_major, version_minor and architecture).
+static Result<std::tuple<int, int, std::string>> GetKernelInfo() {
+  struct utsname buf;
+  int ret, kernel_version_major, kernel_version_minor;
+  ret = uname(&buf);
+  if (ret != 0) {
+    return Error() << "Failed to get kernel version.";
+  }
+
+  char unused;
+  ret = sscanf(buf.release, "%d.%d%c", &kernel_version_major,
+               &kernel_version_minor, &unused);
+  if (ret < 2) {
+    return Error() << "Failed to parse kernel version.";
+  }
+
+  return std::make_tuple(kernel_version_major, kernel_version_minor,
+                         buf.machine);
+}
+
+bool ShouldSkipGkiComplianceV1() {
+  auto kernel_info = GetKernelInfo();
+
+  if (!kernel_info.ok()) {
+    ADD_FAILURE() << "Failed to get kernel info";
+    return true;
+  }
+
+  const auto [kernel_version_major, kernel_version_minor, kernel_arch] =
+      (std::move(kernel_info).value());
+
+  /* Skip for devices if the kernel version is not 5.4. */
+  if (kernel_version_major != 5 || kernel_version_minor != 4) {
+    GTEST_LOG_(INFO)
+        << "Exempt from GKI 1.0 test due to unmatched kernel version: "
+        << kernel_version_major << "." << kernel_version_minor;
+    return true;
+  }
+  /* Skip for non arm64 that do not mandate GKI yet. */
+  if (kernel_arch != "aarch64") {
+    GTEST_LOG_(INFO) << "Exempt from GKI test on non-arm64 devices";
+    return true;
+  }
+
+  return false;
+}
+
+bool ShouldSkipGkiComplianceV2() {
+  auto kernel_info = GetKernelInfo();
+
+  if (!kernel_info.ok()) {
+    ADD_FAILURE() << "Failed to get kernel info";
+    return true;
+  }
+
+  const auto [kernel_version_major, kernel_version_minor, kernel_arch] =
+      (std::move(kernel_info).value());
+
+  /* Skip for devices if the kernel version is not >= 5.10. */
+  if (kernel_version_major < 5 ||
+      (kernel_version_major == 5 && kernel_version_minor < 10)) {
+    GTEST_LOG_(INFO)
+        << "Exempt from GKI 2.0 test due to unmatched kernel version: "
+        << kernel_version_major << "." << kernel_version_minor;
+    return true;
+  }
+
+  /* Skip for non arm64 that do not mandate GKI yet. */
+  if (kernel_arch != "aarch64") {
+    GTEST_LOG_(INFO) << "Exempt from GKI test on non-arm64 devices";
+    return true;
+  }
+
+  return false;
+}
+
+TEST(AvbTest, GkiComplianceV1) {
+  if (ShouldSkipGkiTest() || ShouldSkipGkiComplianceV1()) {
     return;
   }
 
@@ -526,6 +618,8 @@ TEST(AvbTest, Boot) {
   /* verify boot partition according to vbmeta structure */
   std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> descriptor =
       android::fs_mgr::GetHashDescriptor("boot", std::move(*vbmeta));
+  ASSERT_TRUE(descriptor)
+      << "Failed to load hash descriptor from boot.img vbmeta";
   const std::string &salt_str = descriptor->salt;
   const std::string &expected_digest_str = descriptor->digest;
 
@@ -533,7 +627,7 @@ TEST(AvbTest, Boot) {
   ASSERT_GE(fd, 0) << "Fail to open boot partition. Try 'adb root'.";
 
   const std::string hash_algorithm(GetHashAlgorithm(*descriptor));
-  ALOGI("hash_algorithm = %s", hash_algorithm.c_str());
+  GTEST_LOG_(INFO) << "hash_algorithm = " << hash_algorithm;
 
   std::unique_ptr<ShaHasher> hasher = CreateShaHasher(hash_algorithm);
   ASSERT_TRUE(hasher);
@@ -561,6 +655,139 @@ TEST(AvbTest, Boot) {
       << "Calculated GKI boot digest size does not match expected digest size.";
   ASSERT_TRUE(out_digest == expected_digest)
       << "Calculated GKI boot digest does not match expected digest.";
+}
+
+// Loads GKI compliance V2 images.
+//
+// Arguments:
+//   out_boot_partition_vector: the boot.img content without boot_signature.
+//       It consists of a boot header, a kernel and a ramdisk.
+//   out_boot_signature_vector: the boot signature used to verify
+//       out_boot_partition_vector.
+//
+void LoadGkiComplianceV2Images(
+    std::vector<uint8_t> *out_boot_partition_vector,
+    std::vector<uint8_t> *out_boot_signature_vector) {
+  constexpr auto BOOT_HEADER_SIZE = 4096;
+  std::string boot_path = "/dev/block/by-name/boot" + fs_mgr_get_slot_suffix();
+
+  // Read boot header first.
+  android::base::unique_fd fd(open(boot_path.c_str(), O_RDONLY));
+  ASSERT_GE(fd, 0) << "Fail to open boot partition. Try 'adb root'.";
+
+  out_boot_partition_vector->resize(BOOT_HEADER_SIZE);
+  ASSERT_TRUE(android::base::ReadFully(fd, out_boot_partition_vector->data(),
+                                       BOOT_HEADER_SIZE))
+      << "Could not read boot partition header to vector.";
+
+  boot_img_hdr_v4 *boot_header =
+      reinterpret_cast<boot_img_hdr_v4 *>(out_boot_partition_vector->data());
+  std::string boot_magic(reinterpret_cast<const char *>(boot_header->magic),
+                         BOOT_MAGIC_SIZE);
+  ASSERT_EQ(boot_magic, BOOT_MAGIC) << "Incorrect boot magic: " << boot_magic;
+
+  GTEST_LOG_(INFO) << "kernel size: " << boot_header->kernel_size
+                   << ", ramdisk size: " << boot_header->ramdisk_size
+                   << ", signature size: " << boot_header->signature_size;
+
+  // Now reads kernel and ramdisk.
+  uint32_t kernel_pages = (boot_header->kernel_size + 4096 - 1) / 4096;
+  uint32_t ramdisk_pages = (boot_header->ramdisk_size + 4096 - 1) / 4096;
+  uint32_t kernel_ramdisk_size = (kernel_pages + ramdisk_pages) * 4096;
+
+  out_boot_partition_vector->resize(BOOT_HEADER_SIZE + kernel_ramdisk_size);
+  ASSERT_TRUE(android::base::ReadFully(
+      fd, out_boot_partition_vector->data() + BOOT_HEADER_SIZE,
+      kernel_ramdisk_size))
+      << "Could not read boot partition to vector.";
+
+  // Reads boot_signature.
+  uint32_t signature_pages = (boot_header->signature_size + 4096 - 1) / 4096;
+  uint32_t signature_size_aligned = signature_pages * 4096;
+  out_boot_signature_vector->resize(signature_size_aligned);
+  ASSERT_TRUE(android::base::ReadFully(fd, out_boot_signature_vector->data(),
+                                       signature_size_aligned))
+      << "Could not read boot signature to vector.";
+}
+
+// Verifies the GKI 2.0 boot.img against the boot signature.
+//
+// Arguments:
+//   boot_partition_vector: the boot.img content without boot_signature.
+//       It consists of a boot header, a kernel and a ramdisk.
+//   boot_signature_vector: the boot signature used to verify
+//       boot_partition_vector.
+//
+void VerifyGkiComplianceV2Signature(
+    const std::vector<uint8_t> &boot_partition_vector,
+    const std::vector<uint8_t> &boot_signature_vector) {
+  size_t pk_len;
+  const uint8_t *pk_data;
+  ::AvbVBMetaVerifyResult vbmeta_ret;
+
+  vbmeta_ret =
+      avb_vbmeta_image_verify(boot_signature_vector.data(),
+                              boot_signature_vector.size(), &pk_data, &pk_len);
+  ASSERT_EQ(vbmeta_ret, AVB_VBMETA_VERIFY_RESULT_OK)
+      << "Failed to verify boot_signature: " << vbmeta_ret;
+
+  std::string out_public_key_data(reinterpret_cast<const char *>(pk_data),
+                                  pk_len);
+  ASSERT_FALSE(out_public_key_data.empty()) << "The GKI image is not signed.";
+  EXPECT_TRUE(ValidatePublicKeyBlob(out_public_key_data))
+      << "The GKI image is not signed by an official key.";
+
+  android::fs_mgr::VBMetaData boot_signature(boot_signature_vector.data(),
+                                             boot_signature_vector.size(),
+                                             "boot_signature");
+
+  std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> descriptor =
+      android::fs_mgr::GetHashDescriptor("boot", std::move(boot_signature));
+  ASSERT_TRUE(descriptor)
+      << "Failed to load hash descriptor from the boot signature";
+  ASSERT_EQ(boot_partition_vector.size(), descriptor->image_size);
+
+  const std::string &salt_str = descriptor->salt;
+  const std::string &expected_digest_str = descriptor->digest;
+
+  const std::string hash_algorithm(GetHashAlgorithm(*descriptor));
+  GTEST_LOG_(INFO) << "hash_algorithm = " << hash_algorithm;
+
+  std::unique_ptr<ShaHasher> hasher = CreateShaHasher(hash_algorithm);
+  ASSERT_TRUE(hasher);
+
+  std::vector<uint8_t> salt, expected_digest, out_digest;
+
+  bool ok = HexToBytes(salt_str, &salt);
+  ASSERT_TRUE(ok) << "Invalid salt in descriptor: " << salt_str;
+  ok = HexToBytes(expected_digest_str, &expected_digest);
+  ASSERT_TRUE(ok) << "Invalid digest in descriptor: " << expected_digest_str;
+
+  ASSERT_EQ(expected_digest.size(), hasher->GetDigestSize());
+  out_digest.resize(hasher->GetDigestSize());
+
+  ASSERT_TRUE(hasher->CalculateDigest(boot_partition_vector.data(),
+                                      boot_partition_vector.size(), salt.data(),
+                                      descriptor->salt_len, out_digest.data()))
+      << "Unable to calculate boot image digest.";
+
+  ASSERT_EQ(out_digest.size(), expected_digest.size())
+      << "Calculated GKI boot digest size does not match expected digest size.";
+
+  ASSERT_EQ(out_digest, expected_digest)
+      << "Calculated GKI boot digest does not match expected digest.";
+}
+
+TEST(AvbTest, GkiComplianceV2) {
+  if (ShouldSkipGkiTest() || ShouldSkipGkiComplianceV2()) {
+    return;
+  }
+
+  std::vector<uint8_t> boot_partition_vector;
+  std::vector<uint8_t> boot_signature_vector;
+  ASSERT_NO_FATAL_FAILURE(LoadGkiComplianceV2Images(&boot_partition_vector,
+                                                    &boot_signature_vector));
+  VerifyGkiComplianceV2Signature(boot_partition_vector, boot_signature_vector);
 }
 
 // Loads contents and metadata of logical system partition, calculates
@@ -753,17 +980,6 @@ TEST(AvbTest, SystemDescriptor) {
   ASSERT_EQ(NextWord(target.data, &next_pos), std::string::npos);
 }
 
-static int getFirstApiLevel() {
-  int level = android::base::GetIntProperty("ro.product.first_api_level", 0);
-  if (level == 0) {
-    level = android::base::GetIntProperty("ro.build.version.sdk", 0);
-  }
-  if (level == 0) {
-    ADD_FAILURE() << "Failed to determine first API level";
-  }
-  return level;
-}
-
 static void VerifyHashAlgorithm(const AvbHashtreeDescriptor* descriptor) {
   AvbHashtreeDescriptor hashtree_descriptor;
   ASSERT_TRUE(avb_hashtree_descriptor_validate_and_byteswap(
@@ -807,7 +1023,7 @@ static void LoadAndVerifyAvbSlotDataForCurrentSlot(
 TEST(AvbTest, HashtreeAlgorithm) {
   constexpr auto S_API_LEVEL = 31;
 
-  int first_api_level = getFirstApiLevel();
+  int first_api_level = GetFirstApiLevel();
   GTEST_LOG_(INFO) << "First API level is " << first_api_level;
   if (first_api_level < S_API_LEVEL) {
     GTEST_LOG_(INFO)
