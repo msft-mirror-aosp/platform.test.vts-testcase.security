@@ -32,6 +32,9 @@ cc_defaults {
         "libfs_avb",
         "libfs_mgr",
     ],
+    header_libs: [
+        "bootimg_headers",
+    ],
 }
 
 cc_test {
