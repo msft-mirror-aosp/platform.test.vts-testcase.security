@@ -26,6 +26,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
 #include <fs_avb/fs_avb_util.h>
@@ -36,6 +37,8 @@
 #include <libdm/dm.h>
 #include <log/log.h>
 #include <openssl/sha.h>
+
+using android::base::GetProperty;
 
 static uint8_t HexDigitToByte(char c) {
   if (c >= '0' && c <= '9') {
@@ -452,9 +455,22 @@ GetSystemHashtreeDescriptor(
   return descriptor;
 }
 
+bool ShouldSkipTest() {
+  /*Skip test for Automotive in android Q*/
+  std::string hw_type = GetProperty("ro.hardware.type", "");
+  if (hw_type == "automotive") {
+    ALOGI("Exempt from GSI test due to Automotive in android Q");
+    return true;
+  }
+  return false;
+}
+
 // Loads contents and metadata of logical system partition, calculates
 // the hashtree, and compares with the metadata.
 TEST(AvbTest, SystemHashtree) {
+  if (ShouldSkipTest()) {
+    return;
+  }
   android::fs_mgr::VBMetaVerifyResult verify_result;
   std::string system_path;
   std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor> descriptor =
@@ -527,8 +543,10 @@ static size_t NextWord(const std::string &str, size_t *pos) {
 
 // Compares device mapper table with system hashtree descriptor.
 TEST(AvbTest, SystemDescriptor) {
+  if (ShouldSkipTest()) {
+    return;
+  }
   // Get system hashtree descriptor.
-
   android::fs_mgr::VBMetaVerifyResult verify_result;
   std::string system_path;
   std::unique_ptr<android::fs_mgr::FsAvbHashtreeDescriptor> descriptor =
