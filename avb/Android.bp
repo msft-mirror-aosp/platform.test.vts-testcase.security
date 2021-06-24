@@ -26,10 +26,14 @@ cc_defaults {
         "liblog",
     ],
     static_libs: [
+        "libavb_user",
         "libavb",
         "libcrypto_static",
         "libfs_avb",
         "libfs_mgr",
+    ],
+    header_libs: [
+        "bootimg_headers",
     ],
 }
 
