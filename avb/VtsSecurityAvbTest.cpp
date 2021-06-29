@@ -508,8 +508,10 @@ bool ShouldSkipGkiTest() {
   /* Skip for form factors that do not mandate GKI yet */
   const static bool tv_device =
       DeviceSupportsFeature("android.software.leanback");
-  if (tv_device) {
-    GTEST_LOG_(INFO) << "Exempt from GKI test on TV devices";
+  const static bool auto_device =
+      DeviceSupportsFeature("android.hardware.type.automotive");
+  if (tv_device || auto_device) {
+    GTEST_LOG_(INFO) << "Exempt from GKI test on TV/Auto devices";
     return true;
   }
 
