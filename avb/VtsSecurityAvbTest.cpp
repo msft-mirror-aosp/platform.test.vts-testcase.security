@@ -505,6 +505,11 @@ bool ShouldSkipGkiTest() {
     return true;
   }
 
+  /* Skip for non arm64 that do not mandate GKI yet. */
+  if (strcmp(buf.machine, "aarch64") != 0) {
+    return;
+  }
+
   /* Skip for form factors that do not mandate GKI yet */
   const static bool tv_device =
       DeviceSupportsFeature("android.software.leanback");
