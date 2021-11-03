@@ -484,23 +484,48 @@ bool DeviceSupportsFeature(const char *feature) {
   return device_supports_feature;
 }
 
-static int GetFirstApiLevel() {
-  int level = android::base::GetIntProperty("ro.product.first_api_level", 0);
-  if (level == 0) {
-    level = android::base::GetIntProperty("ro.build.version.sdk", 0);
+const uint32_t kCurrentApiLevel = 10000;
+
+static uint32_t ReadApiLevelProps(
+    const std::vector<std::string> &api_level_props) {
+  uint32_t api_level = kCurrentApiLevel;
+  for (const auto &api_level_prop : api_level_props) {
+    api_level = android::base::GetUintProperty<uint32_t>(api_level_prop,
+                                                         kCurrentApiLevel);
+    if (api_level != kCurrentApiLevel) {
+      break;
+    }
   }
-  if (level == 0) {
-    ADD_FAILURE() << "Failed to determine first API level";
+  return api_level;
+}
+
+static uint32_t GetBoardApiLevel() {
+  // "ro.vendor.api_level" is added in Android T.
+  uint32_t vendor_api_level = ReadApiLevelProps({"ro.vendor.api_level"});
+  if (vendor_api_level != kCurrentApiLevel) {
+    return vendor_api_level;
   }
-  return level;
+  // For pre-T devices, determine the board API level by ourselves.
+  uint32_t device_api_level =
+      ReadApiLevelProps({"ro.product.first_api_level", "ro.build.version.sdk"});
+  uint32_t board_api_level =
+      ReadApiLevelProps({"ro.board.api_level", "ro.board.first_api_level",
+                         "ro.vendor.build.version.sdk"});
+  uint32_t api_level =
+      board_api_level < device_api_level ? board_api_level : device_api_level;
+  if (api_level == kCurrentApiLevel) {
+    ADD_FAILURE() << "Failed to determine board API level";
+    return 0;
+  }
+  return api_level;
 }
 
 bool ShouldSkipGkiTest() {
   /* Skip for devices launched before Android R. */
   constexpr auto R_API_LEVEL = 30;
-  int first_api_level = GetFirstApiLevel();
-  GTEST_LOG_(INFO) << "First API level is " << first_api_level;
-  if (first_api_level < R_API_LEVEL) {
+  uint32_t board_api_level = GetBoardApiLevel();
+  GTEST_LOG_(INFO) << "Board API level is " << board_api_level;
+  if (board_api_level < R_API_LEVEL) {
     GTEST_LOG_(INFO) << "Exempt from GKI test due to old starting API level";
     return true;
   }
@@ -1052,9 +1077,9 @@ static void LoadAndVerifyAvbSlotDataForCurrentSlot(
 TEST(AvbTest, HashtreeAlgorithm) {
   constexpr auto S_API_LEVEL = 31;
 
-  int first_api_level = GetFirstApiLevel();
-  GTEST_LOG_(INFO) << "First API level is " << first_api_level;
-  if (first_api_level < S_API_LEVEL) {
+  uint32_t board_api_level = GetBoardApiLevel();
+  GTEST_LOG_(INFO) << "Board API level is " << board_api_level;
+  if (board_api_level < S_API_LEVEL) {
     GTEST_LOG_(INFO)
         << "Exempt from avb hash tree test due to old starting API level";
     return;
