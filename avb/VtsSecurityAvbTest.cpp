@@ -508,8 +508,10 @@ bool ShouldSkipGkiTest() {
   /* Skip for form factors that do not mandate GKI yet */
   const static bool tv_device =
       DeviceSupportsFeature("android.software.leanback");
-  if (tv_device) {
-    GTEST_LOG_(INFO) << "Exempt from GKI test on TV devices";
+  const static bool auto_device =
+      DeviceSupportsFeature("android.hardware.type.automotive");
+  if (tv_device || auto_device) {
+    GTEST_LOG_(INFO) << "Exempt from GKI test on TV/Auto devices";
     return true;
   }
 
@@ -1000,6 +1002,30 @@ static void VerifyHashAlgorithm(const AvbHashtreeDescriptor* descriptor) {
   }
 }
 
+// In VTS, a boot-debug.img or vendor_boot-debug.img, which is not release
+// key signed, will be used. In this case, The AvbSlotVerifyResult returned
+// from libavb->avb_slot_verify() might be the following non-fatal errors.
+// We should allow them in VTS because it might not be
+// AVB_SLOT_VERIFY_RESULT_OK.
+static bool CheckAvbSlotVerifyResult(AvbSlotVerifyResult result) {
+  switch (result) {
+    case AVB_SLOT_VERIFY_RESULT_OK:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_VERIFICATION:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_ROLLBACK_INDEX:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_PUBLIC_KEY_REJECTED:
+      return true;
+
+    case AVB_SLOT_VERIFY_RESULT_ERROR_OOM:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_IO:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_METADATA:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_UNSUPPORTED_VERSION:
+    case AVB_SLOT_VERIFY_RESULT_ERROR_INVALID_ARGUMENT:
+      return false;
+  }
+
+  return false;
+}
+
 static void LoadAndVerifyAvbSlotDataForCurrentSlot(
     AvbSlotVerifyData** avb_slot_data) {
   // Use an empty suffix string for non-A/B devices.
@@ -1011,11 +1037,14 @@ static void LoadAndVerifyAvbSlotDataForCurrentSlot(
 
   const char* requested_partitions[] = {nullptr};
 
+  // AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR is needed for boot-debug.img
+  // or vendor_boot-debug.img, which is not releae key signed.
   auto avb_ops = avb_ops_user_new();
-  auto verify_result = avb_slot_verify(
-      avb_ops, requested_partitions, suffix.c_str(), AVB_SLOT_VERIFY_FLAGS_NONE,
-      AVB_HASHTREE_ERROR_MODE_EIO, avb_slot_data);
-  ASSERT_EQ(AVB_SLOT_VERIFY_RESULT_OK, verify_result)
+  auto verify_result =
+      avb_slot_verify(avb_ops, requested_partitions, suffix.c_str(),
+                      AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR,
+                      AVB_HASHTREE_ERROR_MODE_EIO, avb_slot_data);
+  ASSERT_TRUE(CheckAvbSlotVerifyResult(verify_result))
       << "Failed to verify avb slot data " << verify_result;
 }
 
