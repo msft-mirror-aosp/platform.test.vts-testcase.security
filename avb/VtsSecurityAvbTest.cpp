@@ -29,6 +29,7 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
+#include <android-base/properties.h>
 #include <fs_avb/fs_avb_util.h>
 #include <fs_mgr/roots.h>
 #include <fstab/fstab.h>
@@ -500,6 +501,15 @@ TEST(AvbTest, Boot) {
   const static bool tv_device =
       DeviceSupportsFeature("android.software.leanback");
   if (tv_device) {
+    return;
+  }
+
+  /* Skip for automotive device and SDK30 or less that do not mandate GKI yet */
+  const static bool automotive_device =
+      DeviceSupportsFeature("android.hardware.type.automotive");
+  const static int sdkVersion =
+          android::base::GetUintProperty<uint64_t>("ro.build.version.sdk", 0);
+  if (automotive_device && sdkVersion <= 30) {
     return;
   }
 
