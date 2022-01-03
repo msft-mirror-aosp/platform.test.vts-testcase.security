@@ -521,12 +521,23 @@ static uint32_t GetBoardApiLevel() {
   return api_level;
 }
 
+static int GetFirstApiLevel() {
+  int level = android::base::GetIntProperty("ro.product.first_api_level", 0);
+  if (level == 0) {
+    level = android::base::GetIntProperty("ro.build.version.sdk", 0);
+  }
+  if (level == 0) {
+    ADD_FAILURE() << "Failed to determine first API level";
+  }
+  return level;
+}
+
 bool ShouldSkipGkiTest() {
-  /* Skip for devices launched before Android R. */
+  /* Skip for products launched before Android R. */
   constexpr auto R_API_LEVEL = 30;
-  uint32_t board_api_level = GetBoardApiLevel();
-  GTEST_LOG_(INFO) << "Board API level is " << board_api_level;
-  if (board_api_level < R_API_LEVEL) {
+  uint32_t first_api_level = GetFirstApiLevel();
+  GTEST_LOG_(INFO) << "First API level is " << first_api_level;
+  if (first_api_level < R_API_LEVEL) {
     GTEST_LOG_(INFO) << "Exempt from GKI test due to old starting API level";
     return true;
   }
