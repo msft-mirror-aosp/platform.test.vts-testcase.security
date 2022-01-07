@@ -17,7 +17,9 @@
 #include <vector>
 
 #include <android-base/file.h>
+#include <android-base/properties.h>
 #include <android-base/unique_fd.h>
+#include <android/api-level.h>
 #include <bootimg.h>
 #include <fs_avb/fs_avb_util.h>
 #include <gtest/gtest.h>
@@ -171,7 +173,7 @@ bool DeviceSupportsFeature(const char *feature) {
 }  // namespace
 
 class GkiComplianceTest : public testing::Test {
- public:
+ protected:
   void SetUp() override {
     auto vintf = android::vintf::VintfObject::GetInstance();
     ASSERT_NE(nullptr, vintf);
@@ -192,12 +194,22 @@ class GkiComplianceTest : public testing::Test {
     if (tv_device || auto_device) {
       GTEST_SKIP() << "Exempt from GKI test on TV/Auto devices";
     }
+
+    product_first_api_level =
+        android::base::GetIntProperty("ro.product.first_api_level", 0);
+    ASSERT_TRUE(product_first_api_level)
+        << "ro.product.first_api_level is undefined";
   }
 
   std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info;
+  int product_first_api_level;
 };
 
 TEST_F(GkiComplianceTest, GkiComplianceV1) {
+  if (product_first_api_level < __ANDROID_API_R__) {
+    GTEST_SKIP() << "Exempt from GKI 1.0 test: ro.product.first_api_level ("
+                 << product_first_api_level << ") < " << __ANDROID_API_R__;
+  }
   /* Skip for devices if the kernel version is not 5.4. */
   if (runtime_info->kernelVersion().dropMinor() !=
       android::vintf::Version{5, 4}) {
