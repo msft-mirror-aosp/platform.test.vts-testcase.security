@@ -79,7 +79,4 @@ cc_test {
     ],
 
     require_root: true,
-    test_options: {
-        min_shipping_api_level: 30,
-    },
 }
