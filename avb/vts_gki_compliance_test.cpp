@@ -349,68 +349,44 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
   return boot_image;
 }
 
-// Verifies the GKI 2.0 boot.img against the boot signature.
-// Legacy scheme, with only one "boot" descriptor.
-void LegacyVerifyGkiComplianceV2Signature(
-    const GkiBootImage &boot_image,
-    const android::fs_mgr::VBMetaData &boot_signature) {
-  const std::vector<uint8_t> boot_partition_vector(
-      boot_image.data(), boot_image.data() + boot_image.signature_offset());
+// Verify image data integrity with an AVB hash descriptor.
+void VerifyImageDescriptor(
+    const std::vector<uint8_t> &image,
+    const android::fs_mgr::FsAvbHashDescriptor &descriptor) {
+  const std::string TAG = __FUNCTION__ + "("s + descriptor.partition_name + ")";
+  SCOPED_TRACE(TAG);
 
-  size_t pk_len;
-  const uint8_t *pk_data;
-  ::AvbVBMetaVerifyResult vbmeta_ret;
+  ASSERT_EQ(image.size(), descriptor.image_size);
 
-  vbmeta_ret = avb_vbmeta_image_verify(
-      boot_signature.data(), boot_signature.size(), &pk_data, &pk_len);
-  ASSERT_EQ(vbmeta_ret, AVB_VBMETA_VERIFY_RESULT_OK)
-      << "Failed to verify boot_signature: " << vbmeta_ret;
-
-  std::string out_public_key_data(reinterpret_cast<const char *>(pk_data),
-                                  pk_len);
-  ASSERT_FALSE(out_public_key_data.empty()) << "The GKI image is not signed.";
-  EXPECT_TRUE(ValidatePublicKeyBlob(out_public_key_data))
-      << "The GKI image is not signed by an official key.";
-
-  std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> descriptor =
-      android::fs_mgr::GetHashDescriptor(
-          "boot", android::fs_mgr::VBMetaData(boot_signature.data(),
-                                              boot_signature.size(),
-                                              boot_signature.partition()));
-  ASSERT_TRUE(descriptor)
-      << "Failed to load hash descriptor from the boot signature";
-  ASSERT_EQ(boot_partition_vector.size(), descriptor->image_size);
-
-  const std::string &salt_str = descriptor->salt;
-  const std::string &expected_digest_str = descriptor->digest;
+  const std::string &salt_str = descriptor.salt;
+  const std::string &expected_digest_str = descriptor.digest;
 
   const std::string hash_algorithm(
-      reinterpret_cast<const char *>(descriptor->hash_algorithm));
-  GTEST_LOG_(INFO) << "hash_algorithm = " << hash_algorithm;
+      reinterpret_cast<const char *>(descriptor.hash_algorithm));
+  GTEST_LOG_(INFO) << TAG << ": hash_algorithm = " << hash_algorithm;
 
   std::unique_ptr<ShaHasher> hasher = CreateShaHasher(hash_algorithm);
-  ASSERT_TRUE(hasher);
+  ASSERT_NE(nullptr, hasher);
 
   std::vector<uint8_t> salt, expected_digest, out_digest;
 
-  bool ok = HexToBytes(salt_str, &salt);
-  ASSERT_TRUE(ok) << "Invalid salt in descriptor: " << salt_str;
-  ok = HexToBytes(expected_digest_str, &expected_digest);
-  ASSERT_TRUE(ok) << "Invalid digest in descriptor: " << expected_digest_str;
+  ASSERT_TRUE(HexToBytes(salt_str, &salt))
+      << "Invalid salt in descriptor: " << salt_str;
+  ASSERT_TRUE(HexToBytes(expected_digest_str, &expected_digest))
+      << "Invalid digest in descriptor: " << expected_digest_str;
 
   ASSERT_EQ(expected_digest.size(), hasher->GetDigestSize());
   out_digest.resize(hasher->GetDigestSize());
 
-  ASSERT_TRUE(hasher->CalculateDigest(boot_partition_vector.data(),
-                                      boot_partition_vector.size(), salt.data(),
-                                      descriptor->salt_len, out_digest.data()))
-      << "Unable to calculate boot image digest.";
+  ASSERT_TRUE(hasher->CalculateDigest(image.data(), image.size(), salt.data(),
+                                      descriptor.salt_len, out_digest.data()))
+      << "Unable to calculate image digest.";
 
   ASSERT_EQ(out_digest.size(), expected_digest.size())
-      << "Calculated GKI boot digest size does not match expected digest size.";
+      << "Calculated digest size does not match expected digest size.";
 
   ASSERT_EQ(out_digest, expected_digest)
-      << "Calculated GKI boot digest does not match expected digest.";
+      << "Calculated digest does not match expected digest.";
 }
 
 // Returns true iff the device has the specified feature.
@@ -562,8 +538,8 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
       android::fs_mgr::GetHashDescriptor("boot", boot_signature_images);
   ASSERT_NE(nullptr, descriptor)
       << "Failed to load hash descriptor from the boot signature";
-  LegacyVerifyGkiComplianceV2Signature(*boot_image,
-                                       boot_signature_images.front());
+  ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(
+      boot_image->Slice(0, boot_image->signature_offset()), *descriptor));
 }
 
 int main(int argc, char *argv[]) {
