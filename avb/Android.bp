@@ -32,6 +32,9 @@ cc_defaults {
         "libfs_mgr",
         "liblog",
     ],
+    header_libs: [
+        "libstorage_literals_headers",
+    ],
     data: [
         ":q-gsi_avbpubkey",
         ":r-gsi_avbpubkey",
@@ -79,7 +82,4 @@ cc_test {
     ],
 
     require_root: true,
-    test_options: {
-        min_shipping_api_level: 30,
-    },
 }
