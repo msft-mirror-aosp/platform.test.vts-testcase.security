@@ -481,42 +481,18 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
       android::fs_mgr::GetHashDescriptor("boot", std::move(*vbmeta));
   ASSERT_TRUE(descriptor)
       << "Failed to load hash descriptor from boot.img vbmeta";
-  const std::string &salt_str = descriptor->salt;
-  const std::string &expected_digest_str = descriptor->digest;
 
   android::base::unique_fd fd(open(boot_path.c_str(), O_RDONLY));
-  ASSERT_GE(fd, 0) << "Fail to open boot partition. Try 'adb root'.";
+  ASSERT_TRUE(fd.ok()) << "Fail to open boot partition. Try 'adb root'.";
 
-  const std::string hash_algorithm(
-      reinterpret_cast<const char *>(descriptor->hash_algorithm));
-  GTEST_LOG_(INFO) << "hash_algorithm = " << hash_algorithm;
-
-  std::unique_ptr<ShaHasher> hasher = CreateShaHasher(hash_algorithm);
-  ASSERT_TRUE(hasher);
-
-  std::vector<uint8_t> salt, expected_digest, out_digest;
-  bool ok = HexToBytes(salt_str, &salt);
-  ASSERT_TRUE(ok) << "Invalid salt in descriptor: " << salt_str;
-  ok = HexToBytes(expected_digest_str, &expected_digest);
-  ASSERT_TRUE(ok) << "Invalid digest in descriptor: " << expected_digest_str;
-  ASSERT_EQ(expected_digest.size(), hasher->GetDigestSize());
-
-  std::vector<char> boot_partition_vector;
+  std::vector<uint8_t> boot_partition_vector;
   boot_partition_vector.resize(descriptor->image_size);
   ASSERT_TRUE(android::base::ReadFully(fd, boot_partition_vector.data(),
                                        descriptor->image_size))
       << "Could not read boot partition to vector.";
 
-  out_digest.resize(hasher->GetDigestSize());
-  ASSERT_TRUE(hasher->CalculateDigest(boot_partition_vector.data(),
-                                      descriptor->image_size, salt.data(),
-                                      descriptor->salt_len, out_digest.data()))
-      << "Unable to calculate boot image digest.";
-
-  ASSERT_TRUE(out_digest.size() == expected_digest.size())
-      << "Calculated GKI boot digest size does not match expected digest size.";
-  ASSERT_TRUE(out_digest == expected_digest)
-      << "Calculated GKI boot digest does not match expected digest.";
+  ASSERT_NO_FATAL_FAILURE(
+      VerifyImageDescriptor(boot_partition_vector, *descriptor));
 }
 
 TEST_F(GkiComplianceTest, GkiComplianceV2) {
