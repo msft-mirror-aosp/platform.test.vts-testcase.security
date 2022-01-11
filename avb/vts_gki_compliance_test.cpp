@@ -17,90 +17,229 @@
 #include <vector>
 
 #include <android-base/file.h>
+#include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/unique_fd.h>
 #include <android/api-level.h>
 #include <bootimg.h>
 #include <fs_avb/fs_avb_util.h>
 #include <gtest/gtest.h>
+#include <storage_literals/storage_literals.h>
 #include <vintf/VintfObject.h>
 #include <vintf/parse_string.h>
 
 #include "gsi_validation_utils.h"
 
+using namespace std::literals;
+using namespace android::storage_literals;
+
 namespace {
 
-// Loads GKI compliance V2 images.
-//
-// Arguments:
-//   out_boot_partition_vector: the boot.img content without boot_signature.
-//       It consists of a boot header, a kernel and a ramdisk.
-//   out_boot_signature_vector: the boot signature used to verify
-//       out_boot_partition_vector.
-//
-void LoadGkiComplianceV2Images(
-    std::vector<uint8_t> *out_boot_partition_vector,
-    std::vector<uint8_t> *out_boot_signature_vector) {
-  constexpr auto BOOT_HEADER_SIZE = 4096;
-  std::string boot_path = "/dev/block/by-name/boot" + fs_mgr_get_slot_suffix();
-
-  // Read boot header first.
-  android::base::unique_fd fd(open(boot_path.c_str(), O_RDONLY));
-  ASSERT_GE(fd, 0) << "Fail to open boot partition. Try 'adb root'.";
-
-  out_boot_partition_vector->resize(BOOT_HEADER_SIZE);
-  ASSERT_TRUE(android::base::ReadFully(fd, out_boot_partition_vector->data(),
-                                       BOOT_HEADER_SIZE))
-      << "Could not read boot partition header to vector.";
-
-  boot_img_hdr_v4 *boot_header =
-      reinterpret_cast<boot_img_hdr_v4 *>(out_boot_partition_vector->data());
-  std::string boot_magic(reinterpret_cast<const char *>(boot_header->magic),
-                         BOOT_MAGIC_SIZE);
-  ASSERT_EQ(boot_magic, BOOT_MAGIC) << "Incorrect boot magic: " << boot_magic;
-
-  GTEST_LOG_(INFO) << "kernel size: " << boot_header->kernel_size
-                   << ", ramdisk size: " << boot_header->ramdisk_size
-                   << ", signature size: " << boot_header->signature_size;
-
-  // Now reads kernel and ramdisk.
-  uint32_t kernel_pages = (boot_header->kernel_size + 4096 - 1) / 4096;
-  uint32_t ramdisk_pages = (boot_header->ramdisk_size + 4096 - 1) / 4096;
-  uint32_t kernel_ramdisk_size = (kernel_pages + ramdisk_pages) * 4096;
-
-  out_boot_partition_vector->resize(BOOT_HEADER_SIZE + kernel_ramdisk_size);
-  ASSERT_TRUE(android::base::ReadFully(
-      fd, out_boot_partition_vector->data() + BOOT_HEADER_SIZE,
-      kernel_ramdisk_size))
-      << "Could not read boot partition to vector.";
-
-  // Reads boot_signature.
-  uint32_t signature_pages = (boot_header->signature_size + 4096 - 1) / 4096;
-  uint32_t signature_size_aligned = signature_pages * 4096;
-  out_boot_signature_vector->resize(signature_size_aligned);
-  ASSERT_TRUE(android::base::ReadFully(fd, out_boot_signature_vector->data(),
-                                       signature_size_aligned))
-      << "Could not read boot signature to vector.";
+std::string GetBlockDevicePath(const std::string &name) {
+  return "/dev/block/by-name/" + name + fs_mgr_get_slot_suffix();
 }
 
+uint32_t GetBootHeaderVersion(const void *data) {
+  return reinterpret_cast<const boot_img_hdr_v0 *>(data)->header_version;
+}
+
+class GkiBootImage {
+ public:
+  GkiBootImage(const uint8_t *data, size_t size) : data_(data, data + size) {}
+
+  const uint8_t *data() const { return data_.data(); }
+
+  size_t size() const { return data_.size(); }
+
+  uint32_t kernel_pages() const { return GetNumberOfPages(kernel_size()); }
+
+  uint32_t ramdisk_pages() const { return GetNumberOfPages(ramdisk_size()); }
+
+  uint32_t kernel_offset() const {
+    // The first page must be the boot image header.
+    return page_size();
+  }
+
+  uint32_t ramdisk_offset() const {
+    return kernel_offset() + kernel_pages() * page_size();
+  }
+
+  virtual uint32_t page_size() const = 0;
+  virtual uint32_t kernel_size() const = 0;
+  virtual uint32_t ramdisk_size() const = 0;
+  virtual uint32_t signature_size() const = 0;
+  virtual uint32_t signature_offset() const = 0;
+
+  std::vector<uint8_t> Slice(size_t offset, size_t length) const {
+    const auto begin_offset = std::clamp<size_t>(offset, 0, size());
+    const auto end_offset =
+        std::clamp<size_t>(begin_offset + length, begin_offset, size());
+    const auto begin = data() + begin_offset;
+    const auto end = data() + end_offset;
+    return {begin, end};
+  }
+
+  uint32_t GetNumberOfPages(uint32_t value) const {
+    return (value - 1 + page_size()) / page_size();
+  }
+
+  std::vector<uint8_t> GetKernel() const {
+    return Slice(kernel_offset(), kernel_size());
+  }
+
+  std::vector<uint8_t> GetRamdisk() const {
+    return Slice(ramdisk_offset(), ramdisk_size());
+  }
+
+  // Parse a vector of vbmeta image from the boot signature section.
+  std::vector<android::fs_mgr::VBMetaData> GetBootSignatures() const {
+    const auto begin_offset = std::clamp<size_t>(signature_offset(), 0, size());
+    const uint8_t *buffer = data() + begin_offset;
+    // begin_offset + remaining_bytes <= size() because boot_signature must be
+    // the last section.
+    size_t remaining_bytes =
+        std::clamp<size_t>(signature_size(), 0, size() - begin_offset);
+    // In case boot_signature is misaligned, shift to the first AVB magic, and
+    // treat it as the actual beginning of boot signature.
+    while (remaining_bytes >= AVB_MAGIC_LEN) {
+      if (!memcmp(buffer, AVB_MAGIC, AVB_MAGIC_LEN)) {
+        break;
+      }
+      ++buffer;
+      --remaining_bytes;
+    }
+    std::vector<android::fs_mgr::VBMetaData> vbmeta_images;
+    while (remaining_bytes >= sizeof(AvbVBMetaImageHeader)) {
+      if (memcmp(buffer, AVB_MAGIC, AVB_MAGIC_LEN) != 0) {
+        break;
+      }
+      // Extract only the header to calculate the vbmeta image size.
+      android::fs_mgr::VBMetaData vbmeta_header(
+          buffer, sizeof(AvbVBMetaImageHeader), "boot_signature");
+      if (!vbmeta_header.GetVBMetaHeader(/* update_vbmeta_size */ true)) {
+        GTEST_LOG_(ERROR) << __FUNCTION__
+                          << "(): VBMetaData::GetVBMetaHeader() failed.";
+        return {};
+      }
+      const auto vbmeta_image_size = vbmeta_header.size();
+      GTEST_LOG_(INFO) << __FUNCTION__ << "(): Found vbmeta image with size "
+                       << vbmeta_image_size;
+      if (vbmeta_image_size < sizeof(AvbVBMetaImageHeader)) {
+        GTEST_LOG_(ERROR) << __FUNCTION__
+                          << "(): Impossible-sized vbmeta image: "
+                          << vbmeta_image_size;
+        return {};
+      }
+
+      if (vbmeta_image_size > remaining_bytes) {
+        GTEST_LOG_(ERROR)
+            << __FUNCTION__
+            << "(): Premature EOF when parsing GKI boot signature.";
+        return {};
+      }
+
+      vbmeta_images.emplace_back(buffer, vbmeta_image_size, "boot_signature");
+      buffer += vbmeta_image_size;
+      remaining_bytes -= vbmeta_image_size;
+    }
+    return vbmeta_images;
+  }
+
+  virtual ~GkiBootImage() = default;
+
+ private:
+  std::vector<uint8_t> data_;
+};
+
+class GkiBootImageV2 : public GkiBootImage {
+ public:
+  GkiBootImageV2(const uint8_t *data, size_t size) : GkiBootImage(data, size) {}
+
+  const boot_img_hdr_v2 *boot_header() const {
+    return reinterpret_cast<const boot_img_hdr_v2 *>(data());
+  }
+
+  uint32_t page_size() const override { return boot_header()->page_size; }
+
+  uint32_t kernel_size() const override { return boot_header()->kernel_size; }
+
+  uint32_t ramdisk_size() const override { return boot_header()->ramdisk_size; }
+
+  uint32_t signature_size() const override {
+    // Boot v2 header doesn't tell us the size of boot signature, so we just
+    // let GkiBootImage::GetBootSignatures() method heuristically carve out any
+    // boot signature blobs if it can find any. The size we return here is only
+    // a heuristic so we don't look too far.
+    return 16_KiB;
+  }
+
+  uint32_t signature_offset() const override {
+    const uint32_t second_pages = GetNumberOfPages(boot_header()->second_size);
+    const uint32_t recovery_dtbo_pages =
+        GetNumberOfPages(boot_header()->recovery_dtbo_size);
+    const uint32_t dtb_pages = GetNumberOfPages(boot_header()->dtb_size);
+    return ramdisk_offset() +
+           (ramdisk_pages() + second_pages + recovery_dtbo_pages + dtb_pages) *
+               page_size();
+  }
+};
+
+class GkiBootImageV4 : public GkiBootImage {
+ public:
+  static constexpr uint32_t kPageSize = 4096;
+
+  GkiBootImageV4(const uint8_t *data, size_t size) : GkiBootImage(data, size) {}
+
+  const boot_img_hdr_v4 *boot_header() const {
+    return reinterpret_cast<const boot_img_hdr_v4 *>(data());
+  }
+
+  uint32_t page_size() const override { return kPageSize; }
+
+  uint32_t kernel_size() const override { return boot_header()->kernel_size; }
+
+  uint32_t ramdisk_size() const override { return boot_header()->ramdisk_size; }
+
+  uint32_t signature_size() const override {
+    return boot_header()->signature_size;
+  }
+
+  uint32_t signature_offset() const override {
+    return ramdisk_offset() + ramdisk_pages() * page_size();
+  }
+};
+
+// As strange as it sounds we let V3 inherit V4 as they share mostly the same
+// header format and image layout. The only difference is that V3 doesn't have
+// the |signature_size| field, so we would have to improvise.
+class GkiBootImageV3 : public GkiBootImageV4 {
+ public:
+  GkiBootImageV3(const uint8_t *data, size_t size)
+      : GkiBootImageV4(data, size) {}
+
+  uint32_t signature_size() const override {
+    // boot_header() here is actually a |boot_img_hdr_v4*|.
+    // If |signature_size| is non-zero then this is actually a boot v4 image
+    // wearing a boot v3 camouflage, else use the same heuristic as boot v2.
+    const uint32_t value = GkiBootImageV4::boot_header()->signature_size;
+    return value ? value : 16_KiB;
+  }
+};
+
 // Verifies the GKI 2.0 boot.img against the boot signature.
-//
-// Arguments:
-//   boot_partition_vector: the boot.img content without boot_signature.
-//       It consists of a boot header, a kernel and a ramdisk.
-//   boot_signature_vector: the boot signature used to verify
-//       boot_partition_vector.
-//
-void VerifyGkiComplianceV2Signature(
-    const std::vector<uint8_t> &boot_partition_vector,
-    const std::vector<uint8_t> &boot_signature_vector) {
+// Legacy scheme, with only one "boot" descriptor.
+void LegacyVerifyGkiComplianceV2Signature(
+    const GkiBootImageV4 &boot_image,
+    const android::fs_mgr::VBMetaData &boot_signature) {
+  const std::vector<uint8_t> boot_partition_vector(
+      boot_image.data(), boot_image.data() + boot_image.signature_offset());
+
   size_t pk_len;
   const uint8_t *pk_data;
   ::AvbVBMetaVerifyResult vbmeta_ret;
 
-  vbmeta_ret =
-      avb_vbmeta_image_verify(boot_signature_vector.data(),
-                              boot_signature_vector.size(), &pk_data, &pk_len);
+  vbmeta_ret = avb_vbmeta_image_verify(
+      boot_signature.data(), boot_signature.size(), &pk_data, &pk_len);
   ASSERT_EQ(vbmeta_ret, AVB_VBMETA_VERIFY_RESULT_OK)
       << "Failed to verify boot_signature: " << vbmeta_ret;
 
@@ -110,12 +249,11 @@ void VerifyGkiComplianceV2Signature(
   EXPECT_TRUE(ValidatePublicKeyBlob(out_public_key_data))
       << "The GKI image is not signed by an official key.";
 
-  android::fs_mgr::VBMetaData boot_signature(boot_signature_vector.data(),
-                                             boot_signature_vector.size(),
-                                             "boot_signature");
-
   std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> descriptor =
-      android::fs_mgr::GetHashDescriptor("boot", std::move(boot_signature));
+      android::fs_mgr::GetHashDescriptor(
+          "boot", android::fs_mgr::VBMetaData(boot_signature.data(),
+                                              boot_signature.size(),
+                                              boot_signature.partition()));
   ASSERT_TRUE(descriptor)
       << "Failed to load hash descriptor from the boot signature";
   ASSERT_EQ(boot_partition_vector.size(), descriptor->image_size);
@@ -175,11 +313,19 @@ bool DeviceSupportsFeature(const char *feature) {
 class GkiComplianceTest : public testing::Test {
  protected:
   void SetUp() override {
-    auto vintf = android::vintf::VintfObject::GetInstance();
-    ASSERT_NE(nullptr, vintf);
-    runtime_info = vintf->getRuntimeInfo(
-        android::vintf::RuntimeInfo::FetchFlag::CPU_VERSION);
+    // Fetch device runtime information.
+    runtime_info = android::vintf::VintfObject::GetRuntimeInfo();
     ASSERT_NE(nullptr, runtime_info);
+
+    std::string error_msg;
+    kernel_level =
+        android::vintf::VintfObject::GetInstance()->getKernelLevel(&error_msg);
+    ASSERT_NE(android::vintf::Level::UNSPECIFIED, kernel_level) << error_msg;
+
+    product_first_api_level =
+        android::base::GetIntProperty("ro.product.first_api_level", 0);
+    ASSERT_NE(0, product_first_api_level)
+        << "ro.product.first_api_level is undefined.";
 
     /* Skip for non arm64 that do not mandate GKI yet. */
     if (runtime_info->hardwareId() != "aarch64") {
@@ -194,14 +340,10 @@ class GkiComplianceTest : public testing::Test {
     if (tv_device || auto_device) {
       GTEST_SKIP() << "Exempt from GKI test on TV/Auto devices";
     }
-
-    product_first_api_level =
-        android::base::GetIntProperty("ro.product.first_api_level", 0);
-    ASSERT_TRUE(product_first_api_level)
-        << "ro.product.first_api_level is undefined";
   }
 
   std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info;
+  android::vintf::Level kernel_level;
   int product_first_api_level;
 };
 
@@ -220,7 +362,7 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
   /* load vbmeta struct from boot, verify struct integrity */
   std::string out_public_key_data;
   android::fs_mgr::VBMetaVerifyResult out_verify_result;
-  std::string boot_path = "/dev/block/by-name/boot" + fs_mgr_get_slot_suffix();
+  const std::string boot_path = GetBlockDevicePath("boot");
   std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
       android::fs_mgr::LoadAndVerifyVbmetaByPath(
           boot_path, "boot", "" /* expected_key_blob */,
@@ -286,9 +428,39 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
                  << runtime_info->kernelVersion();
   }
 
-  std::vector<uint8_t> boot_partition_vector;
-  std::vector<uint8_t> boot_signature_vector;
-  ASSERT_NO_FATAL_FAILURE(LoadGkiComplianceV2Images(&boot_partition_vector,
-                                                    &boot_signature_vector));
-  VerifyGkiComplianceV2Signature(boot_partition_vector, boot_signature_vector);
+  const std::string block_device_path = GetBlockDevicePath("boot");
+  std::string block_device_data;
+  ASSERT_TRUE(android::base::ReadFileToString(block_device_path,
+                                              &block_device_data,
+                                              /* follow_symlinks */ true))
+      << "Failed to read '" << block_device_path << "': " << strerror(errno);
+
+  ASSERT_GT(block_device_data.size(), 4096)
+      << "Size of '" << block_device_data
+      << "' is impossibly small: " << block_device_data.size();
+  ASSERT_EQ(BOOT_MAGIC, block_device_data.substr(0, BOOT_MAGIC_SIZE));
+  ASSERT_EQ(4, GetBootHeaderVersion(block_device_data.data()));
+
+  GkiBootImageV4 boot_image(
+      reinterpret_cast<const uint8_t *>(block_device_data.data()),
+      block_device_data.size());
+  GTEST_LOG_(INFO) << "kernel size: " << boot_image.kernel_size()
+                   << ", ramdisk size: " << boot_image.ramdisk_size()
+                   << ", signature size: " << boot_image.signature_size();
+
+  const auto boot_signature_images = boot_image.GetBootSignatures();
+  ASSERT_EQ(1, boot_signature_images.size());
+
+  std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> descriptor =
+      android::fs_mgr::GetHashDescriptor("boot", boot_signature_images);
+  ASSERT_NE(nullptr, descriptor)
+      << "Failed to load hash descriptor from the boot signature";
+  LegacyVerifyGkiComplianceV2Signature(boot_image,
+                                       boot_signature_images.front());
+}
+
+int main(int argc, char *argv[]) {
+  ::testing::InitGoogleTest(&argc, argv);
+  android::base::InitLogging(argv, android::base::StderrLogger);
+  return RUN_ALL_TESTS();
 }
