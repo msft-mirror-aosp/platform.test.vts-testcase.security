@@ -226,10 +226,133 @@ class GkiBootImageV3 : public GkiBootImageV4 {
   }
 };
 
+std::string GetAvbProperty(
+    const std::string &name,
+    const std::vector<android::fs_mgr::VBMetaData> &vbmeta_images) {
+  const std::string prop_name = "com.android.build." + name;
+  return android::fs_mgr::GetAvbPropertyDescriptor(prop_name, vbmeta_images);
+}
+
+std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
+    const std::string &name,
+    std::vector<android::fs_mgr::VBMetaData> *boot_signature_images) {
+  const std::string block_device_path = GetBlockDevicePath(name);
+  const std::string TAG = __FUNCTION__ + "("s + block_device_path + ")";
+  SCOPED_TRACE(TAG);
+
+  std::string block_device_data;
+  if (!android::base::ReadFileToString(block_device_path, &block_device_data,
+                                       /* follow_symlinks */ true)) {
+    ADD_FAILURE() << "Failed to read '" << block_device_path
+                  << "': " << strerror(errno);
+    return nullptr;
+  }
+  if (block_device_data.size() <= 4096) {
+    ADD_FAILURE() << "Size of '" << block_device_path
+                  << "' is impossibly small: " << block_device_data.size();
+    return nullptr;
+  }
+
+  if (block_device_data.substr(0, BOOT_MAGIC_SIZE) != BOOT_MAGIC) {
+    ADD_FAILURE() << "Device has invalid boot magic: " << block_device_path;
+    return nullptr;
+  }
+
+  std::unique_ptr<GkiBootImage> boot_image;
+  const auto boot_header_version =
+      GetBootHeaderVersion(block_device_data.data());
+  if (boot_header_version == 4) {
+    boot_image = std::make_unique<GkiBootImageV4>(
+        reinterpret_cast<const uint8_t *>(block_device_data.data()),
+        block_device_data.size());
+  } else if (boot_header_version == 3) {
+    boot_image = std::make_unique<GkiBootImageV3>(
+        reinterpret_cast<const uint8_t *>(block_device_data.data()),
+        block_device_data.size());
+  } else if (boot_header_version == 2) {
+    boot_image = std::make_unique<GkiBootImageV2>(
+        reinterpret_cast<const uint8_t *>(block_device_data.data()),
+        block_device_data.size());
+  } else {
+    ADD_FAILURE() << "Unexpected boot header version: " << boot_header_version;
+    return nullptr;
+  }
+
+  *boot_signature_images = boot_image->GetBootSignatures();
+  if (boot_signature_images->empty()) {
+    ADD_FAILURE() << "Failed to load the boot signature.";
+    return nullptr;
+  }
+
+  // Verify that the vbmeta images in boot_signature are certified.
+  for (const auto &vbmeta_image : *boot_signature_images) {
+    size_t pk_len;
+    const uint8_t *pk_data;
+    const auto vbmeta_verify_result = avb_vbmeta_image_verify(
+        vbmeta_image.data(), vbmeta_image.size(), &pk_data, &pk_len);
+    if (vbmeta_verify_result != AVB_VBMETA_VERIFY_RESULT_OK) {
+      ADD_FAILURE() << "Failed to verify boot_signature: "
+                    << avb_vbmeta_verify_result_to_string(vbmeta_verify_result);
+      return nullptr;
+    }
+    const std::string out_public_key_data(
+        reinterpret_cast<const char *>(pk_data), pk_len);
+    if (out_public_key_data.empty()) {
+      ADD_FAILURE() << "The GKI image descriptor is not signed.";
+      continue;
+    }
+    if (!ValidatePublicKeyBlob(out_public_key_data)) {
+      ADD_FAILURE()
+          << "The GKI image descriptor is not signed by an official key.";
+      continue;
+    }
+  }
+
+  // Verify the AVB property descriptors in boot_signature matches property
+  // descriptors in vbmeta footer.
+  std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta_footer =
+      android::fs_mgr::LoadAndVerifyVbmetaByPath(
+          block_device_path, name, /* expected_key_blob */ "",
+          /* allow verification error */ true, /* rollback_protection */ false,
+          /* is_chained_vbmeta */ false, /* out_public_key_data */ nullptr,
+          /* out_verification_disabled */ nullptr,
+          /* out_verify_result */ nullptr);
+  if (!vbmeta_footer) {
+    ADD_FAILURE() << "Failed to load vbmeta of: " << block_device_path;
+  } else {
+    std::vector<android::fs_mgr::VBMetaData> footer_image;
+    footer_image.push_back(std::move(*vbmeta_footer));
+    vbmeta_footer.reset();
+
+    for (const auto &prop :
+         {"boot.security_patch"s, "init_boot.security_patch"s}) {
+      const auto expected_value = GetAvbProperty(prop, *boot_signature_images);
+      if (!expected_value.empty()) {
+        const auto value = GetAvbProperty(prop, footer_image);
+        if (value != expected_value) {
+          ADD_FAILURE()
+              << "Boot signature and vbmeta footer property mismatch '" << prop
+              << "': expect '" << expected_value << "', actual '" << value
+              << "'.";
+        }
+      }
+    }
+  }
+
+  GTEST_LOG_(INFO) << TAG << ": " + name + ".fingerprint: "
+                   << GetAvbProperty(name + ".fingerprint",
+                                     *boot_signature_images);
+  GTEST_LOG_(INFO) << TAG << ": kernel size: " << boot_image->kernel_size()
+                   << ", ramdisk size: " << boot_image->ramdisk_size()
+                   << ", signature size: " << boot_image->signature_size();
+
+  return boot_image;
+}
+
 // Verifies the GKI 2.0 boot.img against the boot signature.
 // Legacy scheme, with only one "boot" descriptor.
 void LegacyVerifyGkiComplianceV2Signature(
-    const GkiBootImageV4 &boot_image,
+    const GkiBootImage &boot_image,
     const android::fs_mgr::VBMetaData &boot_signature) {
   const std::vector<uint8_t> boot_partition_vector(
       boot_image.data(), boot_image.data() + boot_image.signature_offset());
@@ -428,34 +551,18 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
                  << runtime_info->kernelVersion();
   }
 
-  const std::string block_device_path = GetBlockDevicePath("boot");
-  std::string block_device_data;
-  ASSERT_TRUE(android::base::ReadFileToString(block_device_path,
-                                              &block_device_data,
-                                              /* follow_symlinks */ true))
-      << "Failed to read '" << block_device_path << "': " << strerror(errno);
-
-  ASSERT_GT(block_device_data.size(), 4096)
-      << "Size of '" << block_device_data
-      << "' is impossibly small: " << block_device_data.size();
-  ASSERT_EQ(BOOT_MAGIC, block_device_data.substr(0, BOOT_MAGIC_SIZE));
-  ASSERT_EQ(4, GetBootHeaderVersion(block_device_data.data()));
-
-  GkiBootImageV4 boot_image(
-      reinterpret_cast<const uint8_t *>(block_device_data.data()),
-      block_device_data.size());
-  GTEST_LOG_(INFO) << "kernel size: " << boot_image.kernel_size()
-                   << ", ramdisk size: " << boot_image.ramdisk_size()
-                   << ", signature size: " << boot_image.signature_size();
-
-  const auto boot_signature_images = boot_image.GetBootSignatures();
+  std::vector<android::fs_mgr::VBMetaData> boot_signature_images;
+  std::unique_ptr<GkiBootImage> boot_image =
+      LoadAndVerifyGkiBootImage("boot", &boot_signature_images);
+  ASSERT_NE(nullptr, boot_image);
+  ASSERT_EQ(4, GetBootHeaderVersion(boot_image->data()));
   ASSERT_EQ(1, boot_signature_images.size());
 
   std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> descriptor =
       android::fs_mgr::GetHashDescriptor("boot", boot_signature_images);
   ASSERT_NE(nullptr, descriptor)
       << "Failed to load hash descriptor from the boot signature";
-  LegacyVerifyGkiComplianceV2Signature(boot_image,
+  LegacyVerifyGkiComplianceV2Signature(*boot_image,
                                        boot_signature_images.front());
 }
 
