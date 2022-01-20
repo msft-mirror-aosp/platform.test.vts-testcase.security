@@ -71,7 +71,7 @@ class GkiBootImage {
   virtual uint32_t signature_offset() const = 0;
 
   uint32_t GetNumberOfPages(uint32_t value) const {
-    return (value - 1 + page_size()) / page_size();
+    return (value + page_size() - 1) / page_size();
   }
 
   std::vector<uint8_t> GetKernel() const {
