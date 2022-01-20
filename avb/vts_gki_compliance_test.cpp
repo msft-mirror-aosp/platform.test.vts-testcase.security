@@ -550,8 +550,18 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
     if (generic_ramdisk_descriptor) {
       GTEST_LOG_(INFO) << "Retrofitted scheme, checking the ramdisk image from "
                           "the 'boot' partition.";
-      ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(
-          boot_image->GetRamdisk(), *generic_ramdisk_descriptor));
+      auto ramdisk = boot_image->GetRamdisk();
+      if (GetBootHeaderVersion(boot_image->data()) == 2) {
+        // For [.begin() + offset, .end()) to be a well-defined range,
+        // |.begin() + offset| must be within [.begin(), .end()], thus
+        // |offset| must be within [0, ramdisk.size()].
+        const auto offset = std::clamp<size_t>(
+            ramdisk.size() - generic_ramdisk_descriptor->image_size, 0,
+            ramdisk.size());
+        ramdisk = {ramdisk.begin() + offset, ramdisk.end()};
+      }
+      ASSERT_NO_FATAL_FAILURE(
+          VerifyImageDescriptor(ramdisk, *generic_ramdisk_descriptor));
     } else {
       GTEST_LOG_(INFO) << "T+ verification scheme, the 'boot' partition must "
                           "contain only the generic kernel and the 'init_boot' "
