@@ -159,6 +159,8 @@ class GkiBootImage {
 
 class GkiBootImageV2 : public GkiBootImage {
  public:
+  static constexpr uint32_t kBootSignatureSize = 16_KiB;
+
   GkiBootImageV2(const uint8_t *data, size_t size) : GkiBootImage(data, size) {}
 
   const boot_img_hdr_v2 *boot_header() const {
@@ -172,21 +174,16 @@ class GkiBootImageV2 : public GkiBootImage {
   uint32_t ramdisk_size() const override { return boot_header()->ramdisk_size; }
 
   uint32_t signature_size() const override {
-    // Boot v2 header doesn't tell us the size of boot signature, so we just
-    // let GkiBootImage::GetBootSignatures() method heuristically carve out any
-    // boot signature blobs if it can find any. The size we return here is only
-    // a heuristic so we don't look too far.
-    return 16_KiB;
+    // Boot v2 header doesn't tell us the size of the boot signature, so we just
+    // define the last 16K bytes to be the boot signature for retrofitted GKI.
+    return kBootSignatureSize;
   }
 
   uint32_t signature_offset() const override {
-    const uint32_t second_pages = GetNumberOfPages(boot_header()->second_size);
-    const uint32_t recovery_dtbo_pages =
-        GetNumberOfPages(boot_header()->recovery_dtbo_size);
-    const uint32_t dtb_pages = GetNumberOfPages(boot_header()->dtb_size);
-    return ramdisk_offset() +
-           (ramdisk_pages() + second_pages + recovery_dtbo_pages + dtb_pages) *
-               page_size();
+    if (size() < signature_size()) {
+      return 0;
+    }
+    return size() - signature_size();
   }
 };
 
@@ -220,6 +217,8 @@ class GkiBootImageV4 : public GkiBootImage {
 // the |signature_size| field, so we would have to improvise.
 class GkiBootImageV3 : public GkiBootImageV4 {
  public:
+  static constexpr uint32_t kBootSignatureSize = 16_KiB;
+
   GkiBootImageV3(const uint8_t *data, size_t size)
       : GkiBootImageV4(data, size) {}
 
@@ -228,7 +227,7 @@ class GkiBootImageV3 : public GkiBootImageV4 {
     // If |signature_size| is non-zero then this is actually a boot v4 image
     // wearing a boot v3 camouflage, else use the same heuristic as boot v2.
     const uint32_t value = GkiBootImageV4::boot_header()->signature_size;
-    return value ? value : 16_KiB;
+    return value ? value : kBootSignatureSize;
   }
 };
 
@@ -361,7 +360,8 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
   GTEST_LOG_(INFO) << TAG << ": " + name + ".fingerprint: "
                    << GetAvbProperty(name + ".fingerprint",
                                      *boot_signature_images);
-  GTEST_LOG_(INFO) << TAG << ": kernel size: " << boot_image->kernel_size()
+  GTEST_LOG_(INFO) << TAG << ": header version: " << boot_header_version
+                   << ", kernel size: " << boot_image->kernel_size()
                    << ", ramdisk size: " << boot_image->ramdisk_size()
                    << ", signature size: " << boot_image->signature_size();
 
