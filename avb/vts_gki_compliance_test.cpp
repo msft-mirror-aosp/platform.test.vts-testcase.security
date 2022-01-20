@@ -435,11 +435,6 @@ class GkiComplianceTest : public testing::Test {
     runtime_info = android::vintf::VintfObject::GetRuntimeInfo();
     ASSERT_NE(nullptr, runtime_info);
 
-    std::string error_msg;
-    kernel_level =
-        android::vintf::VintfObject::GetInstance()->getKernelLevel(&error_msg);
-    ASSERT_NE(android::vintf::Level::UNSPECIFIED, kernel_level) << error_msg;
-
     product_first_api_level =
         android::base::GetIntProperty("ro.product.first_api_level", 0);
     ASSERT_NE(0, product_first_api_level)
@@ -466,7 +461,6 @@ class GkiComplianceTest : public testing::Test {
   }
 
   std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info;
-  android::vintf::Level kernel_level;
   int product_first_api_level;
 };
 
@@ -526,6 +520,12 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
     GTEST_SKIP() << "Exempt from GKI 2.0 test on kernel version: "
                  << runtime_info->kernelVersion();
   }
+
+  // GKI 2.0 ensures getKernelLevel() to return valid value.
+  std::string error_msg;
+  const auto kernel_level =
+      android::vintf::VintfObject::GetInstance()->getKernelLevel(&error_msg);
+  ASSERT_NE(android::vintf::Level::UNSPECIFIED, kernel_level) << error_msg;
 
   std::vector<android::fs_mgr::VBMetaData> boot_signature_images;
   std::unique_ptr<GkiBootImage> boot_image =
