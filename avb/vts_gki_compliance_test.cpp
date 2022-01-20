@@ -24,6 +24,7 @@
 #include <bootimg.h>
 #include <fs_avb/fs_avb_util.h>
 #include <gtest/gtest.h>
+#include <libavb/libavb.h>
 #include <storage_literals/storage_literals.h>
 #include <vintf/VintfObject.h>
 #include <vintf/parse_string.h>
@@ -263,6 +264,19 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
     return nullptr;
   }
 
+  // Remove the AVB footer and chained vbmeta image if there is any.
+  if (block_device_data.size() > AVB_FOOTER_SIZE) {
+    const uint8_t *footer_address =
+        reinterpret_cast<const uint8_t *>(block_device_data.data()) +
+        block_device_data.size() - AVB_FOOTER_SIZE;
+    AvbFooter vbmeta_footer;
+    if (avb_footer_validate_and_byteswap(
+            reinterpret_cast<const AvbFooter *>(footer_address),
+            &vbmeta_footer)) {
+      block_device_data.resize(vbmeta_footer.original_image_size);
+    }
+  }
+
   std::unique_ptr<GkiBootImage> boot_image;
   const auto boot_header_version =
       GetBootHeaderVersion(block_device_data.data());
@@ -314,26 +328,26 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
   }
 
   // Verify the AVB property descriptors in boot_signature matches property
-  // descriptors in vbmeta footer.
-  std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta_footer =
+  // descriptors in the end-of-partition chained vbmeta.
+  std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
       android::fs_mgr::LoadAndVerifyVbmetaByPath(
           block_device_path, name, /* expected_key_blob */ "",
           /* allow verification error */ true, /* rollback_protection */ false,
           /* is_chained_vbmeta */ false, /* out_public_key_data */ nullptr,
           /* out_verification_disabled */ nullptr,
           /* out_verify_result */ nullptr);
-  if (!vbmeta_footer) {
-    ADD_FAILURE() << "Failed to load vbmeta of: " << block_device_path;
+  if (!vbmeta) {
+    ADD_FAILURE() << "Failed to load chained vbmeta of: " << block_device_path;
   } else {
-    std::vector<android::fs_mgr::VBMetaData> footer_image;
-    footer_image.push_back(std::move(*vbmeta_footer));
-    vbmeta_footer.reset();
+    std::vector<android::fs_mgr::VBMetaData> vbmeta_image;
+    vbmeta_image.push_back(std::move(*vbmeta));
+    vbmeta.reset();
 
     for (const auto &prop :
          {"boot.security_patch"s, "init_boot.security_patch"s}) {
       const auto expected_value = GetAvbProperty(prop, *boot_signature_images);
       if (!expected_value.empty()) {
-        const auto value = GetAvbProperty(prop, footer_image);
+        const auto value = GetAvbProperty(prop, vbmeta_image);
         if (value != expected_value) {
           ADD_FAILURE()
               << "Boot signature and vbmeta footer property mismatch '" << prop
