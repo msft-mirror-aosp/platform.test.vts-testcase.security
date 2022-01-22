@@ -40,17 +40,15 @@ std::string GetBlockDevicePath(const std::string &name) {
   return "/dev/block/by-name/" + name + fs_mgr_get_slot_suffix();
 }
 
-uint32_t GetBootHeaderVersion(const void *data) {
-  return reinterpret_cast<const boot_img_hdr_v0 *>(data)->header_version;
-}
-
 class GkiBootImage {
  public:
   GkiBootImage(const uint8_t *data, size_t size) : data_(data, data + size) {}
 
-  const uint8_t *data() const { return data_.data(); }
+  static uint32_t GetBootHeaderVersion(const void *data) {
+    return static_cast<const boot_img_hdr_v0 *>(data)->header_version;
+  }
 
-  size_t size() const { return data_.size(); }
+  uint32_t header_version() const { return GetBootHeaderVersion(data()); }
 
   uint32_t kernel_pages() const { return GetNumberOfPages(kernel_size()); }
 
@@ -66,6 +64,7 @@ class GkiBootImage {
   }
 
   virtual uint32_t page_size() const = 0;
+  virtual uint32_t os_version() const = 0;
   virtual uint32_t kernel_size() const = 0;
   virtual uint32_t ramdisk_size() const = 0;
   virtual uint32_t signature_size() const = 0;
@@ -144,6 +143,10 @@ class GkiBootImage {
   virtual ~GkiBootImage() = default;
 
  protected:
+  const uint8_t *data() const { return data_.data(); }
+
+  size_t size() const { return data_.size(); }
+
   std::vector<uint8_t> Slice(size_t offset, size_t length) const {
     const auto begin_offset = std::clamp<size_t>(offset, 0, size());
     const auto end_offset =
@@ -169,6 +172,8 @@ class GkiBootImageV2 : public GkiBootImage {
 
   uint32_t page_size() const override { return boot_header()->page_size; }
 
+  uint32_t os_version() const override { return boot_header()->os_version; }
+
   uint32_t kernel_size() const override { return boot_header()->kernel_size; }
 
   uint32_t ramdisk_size() const override { return boot_header()->ramdisk_size; }
@@ -185,6 +190,14 @@ class GkiBootImageV2 : public GkiBootImage {
     }
     return size() - signature_size();
   }
+
+  uint32_t recovery_dtbo_size() const {
+    return boot_header()->recovery_dtbo_size;
+  }
+
+  uint64_t recovery_dtbo_offset() const {
+    return boot_header()->recovery_dtbo_offset;
+  }
 };
 
 class GkiBootImageV4 : public GkiBootImage {
@@ -198,6 +211,8 @@ class GkiBootImageV4 : public GkiBootImage {
   }
 
   uint32_t page_size() const override { return kPageSize; }
+
+  uint32_t os_version() const override { return boot_header()->os_version; }
 
   uint32_t kernel_size() const override { return boot_header()->kernel_size; }
 
@@ -278,7 +293,7 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
 
   std::unique_ptr<GkiBootImage> boot_image;
   const auto boot_header_version =
-      GetBootHeaderVersion(block_device_data.data());
+      GkiBootImage::GetBootHeaderVersion(block_device_data.data());
   if (boot_header_version == 4) {
     boot_image = std::make_unique<GkiBootImageV4>(
         reinterpret_cast<const uint8_t *>(block_device_data.data()),
@@ -360,7 +375,8 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
   GTEST_LOG_(INFO) << TAG << ": " + name + ".fingerprint: "
                    << GetAvbProperty(name + ".fingerprint",
                                      *boot_signature_images);
-  GTEST_LOG_(INFO) << TAG << ": header version: " << boot_header_version
+  GTEST_LOG_(INFO) << TAG
+                   << ": header version: " << boot_image->header_version()
                    << ", kernel size: " << boot_image->kernel_size()
                    << ", ramdisk size: " << boot_image->ramdisk_size()
                    << ", signature size: " << boot_image->signature_size();
@@ -535,7 +551,7 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
   if (kernel_level <= android::vintf::Level::S) {
     // R, S kernel
     // Legacy scheme, verify the GKI 2.0 boot.img against the "boot" descriptor.
-    EXPECT_EQ(4, GetBootHeaderVersion(boot_image->data()));
+    EXPECT_EQ(4, boot_image->header_version());
     EXPECT_EQ(1, boot_signature_images.size());
 
     std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor>
@@ -548,6 +564,10 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
                                                   *legacy_boot_descriptor));
   } else {
     // T+ kernel
+    EXPECT_EQ(0, boot_image->os_version())
+        << "OS version and security patch level should be defined in the "
+           "chained vbmeta image.";
+
     std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor>
         generic_kernel_descriptor = android::fs_mgr::GetHashDescriptor(
             "generic_kernel", boot_signature_images);
@@ -555,7 +575,6 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
         generic_ramdisk_descriptor = android::fs_mgr::GetHashDescriptor(
             "generic_ramdisk", boot_signature_images);
 
-    // TODO: Verify the header fields.
     ASSERT_NE(nullptr, generic_kernel_descriptor)
         << "Failed to load the 'generic_kernel' hash descriptor.";
     ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(boot_image->GetKernel(),
@@ -565,7 +584,13 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
       GTEST_LOG_(INFO) << "Retrofitted scheme, checking the ramdisk image from "
                           "the 'boot' partition.";
       auto ramdisk = boot_image->GetRamdisk();
-      if (GetBootHeaderVersion(boot_image->data()) == 2) {
+      if (boot_image->header_version() == 2) {
+        const auto *boot_image_v2 =
+            static_cast<const GkiBootImageV2 *>(boot_image.get());
+        EXPECT_EQ(0, boot_image_v2->recovery_dtbo_size())
+            << "'boot' partition mustn't include a recovery DTBO/ACPIO";
+        EXPECT_EQ(0, boot_image_v2->recovery_dtbo_offset())
+            << "'boot' partition mustn't include a recovery DTBO/ACPIO";
         // For [.begin() + offset, .end()) to be a well-defined range,
         // |.begin() + offset| must be within [.begin(), .end()], thus
         // |offset| must be within [0, ramdisk.size()].
@@ -580,7 +605,7 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
       GTEST_LOG_(INFO) << "T+ verification scheme, the 'boot' partition must "
                           "contain only the generic kernel and the 'init_boot' "
                           "partition must contain only the generic ramdisk.";
-      EXPECT_EQ(4, GetBootHeaderVersion(boot_image->data()));
+      EXPECT_EQ(4, boot_image->header_version());
       EXPECT_EQ(1, boot_signature_images.size());
       EXPECT_EQ(0, boot_image->ramdisk_size())
           << "'boot' partition mustn't include a ramdisk image.";
@@ -589,10 +614,13 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
       std::unique_ptr<GkiBootImage> init_boot_image =
           LoadAndVerifyGkiBootImage("init_boot", &init_boot_signature_images);
       ASSERT_NE(nullptr, init_boot_image);
-      EXPECT_EQ(4, GetBootHeaderVersion(init_boot_image->data()));
+      EXPECT_EQ(4, init_boot_image->header_version());
       EXPECT_EQ(1, init_boot_signature_images.size());
       EXPECT_EQ(0, init_boot_image->kernel_size())
           << "'init_boot' partition mustn't include a kernel image.";
+      EXPECT_EQ(0, init_boot_image->os_version())
+          << "OS version and security patch level should be defined in the "
+             "chained vbmeta image.";
 
       generic_ramdisk_descriptor = android::fs_mgr::GetHashDescriptor(
           "generic_ramdisk", init_boot_signature_images);
