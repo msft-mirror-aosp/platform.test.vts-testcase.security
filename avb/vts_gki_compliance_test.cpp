@@ -357,17 +357,14 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
     vbmeta_image.push_back(std::move(*vbmeta));
     vbmeta.reset();
 
-    for (const auto &prop :
-         {"boot.security_patch"s, "init_boot.security_patch"s}) {
-      const auto expected_value = GetAvbProperty(prop, *boot_signature_images);
-      if (!expected_value.empty()) {
-        const auto value = GetAvbProperty(prop, vbmeta_image);
-        if (value != expected_value) {
-          ADD_FAILURE()
-              << "Boot signature and vbmeta footer property mismatch '" << prop
-              << "': expect '" << expected_value << "', actual '" << value
-              << "'.";
-        }
+    const auto prop = "boot.security_patch"s;
+    const auto expected_value = GetAvbProperty(prop, *boot_signature_images);
+    if (!expected_value.empty()) {
+      const auto value = GetAvbProperty(prop, vbmeta_image);
+      if (value != expected_value) {
+        ADD_FAILURE() << "Boot signature and vbmeta footer property mismatch '"
+                      << prop << "': expect '" << expected_value
+                      << "', actual '" << value << "'.";
       }
     }
   }
@@ -547,88 +544,39 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
   std::unique_ptr<GkiBootImage> boot_image =
       LoadAndVerifyGkiBootImage("boot", &boot_signature_images);
   ASSERT_NE(nullptr, boot_image);
+  EXPECT_EQ(4, boot_image->header_version());
+  EXPECT_EQ(1, boot_signature_images.size());
 
   if (kernel_level <= android::vintf::Level::S) {
-    // R, S kernel
-    // Legacy scheme, verify the GKI 2.0 boot.img against the "boot" descriptor.
-    EXPECT_EQ(4, boot_image->header_version());
-    EXPECT_EQ(1, boot_signature_images.size());
+    GTEST_LOG_(INFO) << "Android R and S verification scheme. Verify the GKI "
+                        "2.0 boot.img with the 'boot' image descriptor.";
 
     std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor>
         legacy_boot_descriptor =
             android::fs_mgr::GetHashDescriptor("boot", boot_signature_images);
-
     ASSERT_NE(nullptr, legacy_boot_descriptor)
         << "Failed to load hash descriptor from the boot signature.";
     ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(boot_image->GetLegacyGki(),
                                                   *legacy_boot_descriptor));
   } else {
-    // T+ kernel
-    EXPECT_EQ(0, boot_image->os_version())
-        << "OS version and security patch level should be defined in the "
-           "chained vbmeta image.";
+    GTEST_LOG_(INFO)
+        << "Android T+ verification scheme. The GKI boot.img must contain only "
+           "the generic kernel but not the generic ramdisk.";
 
+    // TODO(yochiang): Add 'boot' descriptor.
     std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor>
         generic_kernel_descriptor = android::fs_mgr::GetHashDescriptor(
             "generic_kernel", boot_signature_images);
-    std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor>
-        generic_ramdisk_descriptor = android::fs_mgr::GetHashDescriptor(
-            "generic_ramdisk", boot_signature_images);
-
     ASSERT_NE(nullptr, generic_kernel_descriptor)
         << "Failed to load the 'generic_kernel' hash descriptor.";
     ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(boot_image->GetKernel(),
                                                   *generic_kernel_descriptor));
 
-    if (generic_ramdisk_descriptor) {
-      GTEST_LOG_(INFO) << "Retrofitted scheme, checking the ramdisk image from "
-                          "the 'boot' partition.";
-      auto ramdisk = boot_image->GetRamdisk();
-      if (boot_image->header_version() == 2) {
-        const auto *boot_image_v2 =
-            static_cast<const GkiBootImageV2 *>(boot_image.get());
-        EXPECT_EQ(0, boot_image_v2->recovery_dtbo_size())
-            << "'boot' partition mustn't include a recovery DTBO/ACPIO";
-        EXPECT_EQ(0, boot_image_v2->recovery_dtbo_offset())
-            << "'boot' partition mustn't include a recovery DTBO/ACPIO";
-        // For [.begin() + offset, .end()) to be a well-defined range,
-        // |.begin() + offset| must be within [.begin(), .end()], thus
-        // |offset| must be within [0, ramdisk.size()].
-        const auto offset = std::clamp<size_t>(
-            ramdisk.size() - generic_ramdisk_descriptor->image_size, 0,
-            ramdisk.size());
-        ramdisk = {ramdisk.begin() + offset, ramdisk.end()};
-      }
-      ASSERT_NO_FATAL_FAILURE(
-          VerifyImageDescriptor(ramdisk, *generic_ramdisk_descriptor));
-    } else {
-      GTEST_LOG_(INFO) << "T+ verification scheme, the 'boot' partition must "
-                          "contain only the generic kernel and the 'init_boot' "
-                          "partition must contain only the generic ramdisk.";
-      EXPECT_EQ(4, boot_image->header_version());
-      EXPECT_EQ(1, boot_signature_images.size());
-      EXPECT_EQ(0, boot_image->ramdisk_size())
-          << "'boot' partition mustn't include a ramdisk image.";
-
-      std::vector<android::fs_mgr::VBMetaData> init_boot_signature_images;
-      std::unique_ptr<GkiBootImage> init_boot_image =
-          LoadAndVerifyGkiBootImage("init_boot", &init_boot_signature_images);
-      ASSERT_NE(nullptr, init_boot_image);
-      EXPECT_EQ(4, init_boot_image->header_version());
-      EXPECT_EQ(1, init_boot_signature_images.size());
-      EXPECT_EQ(0, init_boot_image->kernel_size())
-          << "'init_boot' partition mustn't include a kernel image.";
-      EXPECT_EQ(0, init_boot_image->os_version())
-          << "OS version and security patch level should be defined in the "
-             "chained vbmeta image.";
-
-      generic_ramdisk_descriptor = android::fs_mgr::GetHashDescriptor(
-          "generic_ramdisk", init_boot_signature_images);
-      ASSERT_NE(nullptr, generic_ramdisk_descriptor)
-          << "Failed to load the 'generic_ramdisk' hash descriptor.";
-      ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(
-          init_boot_image->GetRamdisk(), *generic_ramdisk_descriptor));
-    }
+    EXPECT_EQ(0, boot_image->ramdisk_size())
+        << "'boot' partition mustn't include a ramdisk image.";
+    EXPECT_EQ(0, boot_image->os_version())
+        << "OS version and security patch level should be defined in the "
+           "chained vbmeta image.";
   }
 }
 
