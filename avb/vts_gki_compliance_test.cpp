@@ -236,9 +236,8 @@ std::string GetAvbProperty(
 }
 
 std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
-    const std::string &name,
     std::vector<android::fs_mgr::VBMetaData> *boot_signature_images) {
-  const std::string block_device_path = GetBlockDevicePath(name);
+  const std::string block_device_path = GetBlockDevicePath("boot");
   const std::string TAG = __FUNCTION__ + "("s + block_device_path + ")";
   SCOPED_TRACE(TAG);
 
@@ -319,36 +318,8 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
     }
   }
 
-  // Verify the AVB property descriptors in boot_signature matches property
-  // descriptors in the end-of-partition chained vbmeta.
-  std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
-      android::fs_mgr::LoadAndVerifyVbmetaByPath(
-          block_device_path, name, /* expected_key_blob */ "",
-          /* allow verification error */ true, /* rollback_protection */ false,
-          /* is_chained_vbmeta */ false, /* out_public_key_data */ nullptr,
-          /* out_verification_disabled */ nullptr,
-          /* out_verify_result */ nullptr);
-  if (!vbmeta) {
-    ADD_FAILURE() << "Failed to load chained vbmeta of: " << block_device_path;
-  } else {
-    std::vector<android::fs_mgr::VBMetaData> vbmeta_image;
-    vbmeta_image.push_back(std::move(*vbmeta));
-    vbmeta.reset();
-
-    const auto prop = "boot.security_patch"s;
-    const auto expected_value = GetAvbProperty(prop, *boot_signature_images);
-    if (!expected_value.empty()) {
-      const auto value = GetAvbProperty(prop, vbmeta_image);
-      if (value != expected_value) {
-        ADD_FAILURE() << "Boot signature and vbmeta footer property mismatch '"
-                      << prop << "': expect '" << expected_value
-                      << "', actual '" << value << "'.";
-      }
-    }
-  }
-
-  GTEST_LOG_(INFO) << TAG << ": " + name + ".fingerprint: "
-                   << GetAvbProperty(name + ".fingerprint",
+  GTEST_LOG_(INFO) << TAG << ": boot.fingerprint: "
+                   << GetAvbProperty("boot.fingerprint",
                                      *boot_signature_images);
   GTEST_LOG_(INFO) << TAG
                    << ": header version: " << boot_image->header_version()
@@ -504,6 +475,7 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
       VerifyImageDescriptor(boot_partition_vector, *descriptor));
 }
 
+// Verify the entire boot image.
 TEST_F(GkiComplianceTest, GkiComplianceV2) {
   /* Skip for devices if the kernel version is not >= 5.10. */
   if (runtime_info->kernelVersion().dropMinor() <
@@ -520,7 +492,7 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
 
   std::vector<android::fs_mgr::VBMetaData> boot_signature_images;
   std::unique_ptr<GkiBootImage> boot_image =
-      LoadAndVerifyGkiBootImage("boot", &boot_signature_images);
+      LoadAndVerifyGkiBootImage(&boot_signature_images);
   ASSERT_NE(nullptr, boot_image);
   ASSERT_LE(1, boot_signature_images.size());
   EXPECT_EQ(4, boot_image->header_version());
@@ -531,6 +503,31 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
            "the generic kernel but not the generic ramdisk.";
     EXPECT_EQ(0, boot_image->ramdisk_size())
         << "'boot' partition mustn't include a ramdisk image.";
+
+    // Verify the AVB property descriptors in boot_signature agree with property
+    // descriptors in the end-of-partition chained vbmeta.
+    std::vector<android::fs_mgr::VBMetaData> vbmeta_image;
+    {
+      const auto boot_path = GetBlockDevicePath("boot");
+      std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
+          android::fs_mgr::LoadAndVerifyVbmetaByPath(
+              boot_path, "boot", /* expected_key_blob */ "",
+              /* allow verification error */ true,
+              /* rollback_protection */ false,
+              /* is_chained_vbmeta */ false, /* out_public_key_data */ nullptr,
+              /* out_verification_disabled */ nullptr,
+              /* out_verify_result */ nullptr);
+      ASSERT_NE(nullptr, vbmeta)
+          << "Failed to load chained vbmeta of: " << boot_path;
+      vbmeta_image.push_back(std::move(*vbmeta));
+    }
+
+    const auto spl_prop = "boot.security_patch"s;
+    const auto gki_spl = GetAvbProperty(spl_prop, boot_signature_images);
+    const auto vbmeta_spl = GetAvbProperty(spl_prop, vbmeta_image);
+    EXPECT_FALSE(gki_spl.empty());
+    EXPECT_EQ(gki_spl, vbmeta_spl)
+        << "Boot signature and chained vbmeta SPL mismatch.";
   }
 
   std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> boot_descriptor =
