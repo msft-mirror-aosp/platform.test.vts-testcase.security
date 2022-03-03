@@ -538,6 +538,40 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
       VerifyImageDescriptor(boot_image->GetBootImage(), *boot_descriptor));
 }
 
+// Verify only the 'generic_kernel' descriptor.
+TEST_F(GkiComplianceTest, GkiComplianceV2_kernel) {
+  /* Skip for devices if the kernel version is not >= 5.10. */
+  if (runtime_info->kernelVersion().dropMinor() <
+      android::vintf::Version{5, 10}) {
+    GTEST_SKIP() << "Exempt from GKI 2.0 test on kernel version: "
+                 << runtime_info->kernelVersion();
+  }
+
+  // GKI 2.0 ensures getKernelLevel() to return valid value.
+  std::string error_msg;
+  const auto kernel_level =
+      android::vintf::VintfObject::GetInstance()->getKernelLevel(&error_msg);
+  ASSERT_NE(android::vintf::Level::UNSPECIFIED, kernel_level) << error_msg;
+  if (kernel_level < android::vintf::Level::T) {
+    GTEST_SKIP() << "Skip for kernel level (" << kernel_level << ") < T ("
+                 << android::vintf::Level::T << ")";
+  }
+
+  std::vector<android::fs_mgr::VBMetaData> boot_signature_images;
+  std::unique_ptr<GkiBootImage> boot_image =
+      LoadAndVerifyGkiBootImage(&boot_signature_images);
+  ASSERT_NE(nullptr, boot_image);
+  ASSERT_LE(1, boot_signature_images.size());
+
+  std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor>
+      generic_kernel_descriptor = android::fs_mgr::GetHashDescriptor(
+          "generic_kernel", boot_signature_images);
+  ASSERT_NE(nullptr, generic_kernel_descriptor)
+      << "Failed to load the 'generic_kernel' hash descriptor.";
+  ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(boot_image->GetKernel(),
+                                                *generic_kernel_descriptor));
+}
+
 int main(int argc, char *argv[]) {
   ::testing::InitGoogleTest(&argc, argv);
   android::base::InitLogging(argv, android::base::StderrLogger);
