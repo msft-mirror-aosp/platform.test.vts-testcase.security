@@ -503,31 +503,9 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
            "the generic kernel but not the generic ramdisk.";
     EXPECT_EQ(0, boot_image->ramdisk_size())
         << "'boot' partition mustn't include a ramdisk image.";
-
-    // Verify the AVB property descriptors in boot_signature agree with property
-    // descriptors in the end-of-partition chained vbmeta.
-    std::vector<android::fs_mgr::VBMetaData> vbmeta_image;
-    {
-      const auto boot_path = GetBlockDevicePath("boot");
-      std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
-          android::fs_mgr::LoadAndVerifyVbmetaByPath(
-              boot_path, "boot", /* expected_key_blob */ "",
-              /* allow verification error */ true,
-              /* rollback_protection */ false,
-              /* is_chained_vbmeta */ false, /* out_public_key_data */ nullptr,
-              /* out_verification_disabled */ nullptr,
-              /* out_verify_result */ nullptr);
-      ASSERT_NE(nullptr, vbmeta)
-          << "Failed to load chained vbmeta of: " << boot_path;
-      vbmeta_image.push_back(std::move(*vbmeta));
-    }
-
-    const auto spl_prop = "boot.security_patch"s;
-    const auto gki_spl = GetAvbProperty(spl_prop, boot_signature_images);
-    const auto vbmeta_spl = GetAvbProperty(spl_prop, vbmeta_image);
-    EXPECT_FALSE(gki_spl.empty());
-    EXPECT_EQ(gki_spl, vbmeta_spl)
-        << "Boot signature and chained vbmeta SPL mismatch.";
+    EXPECT_EQ(0, boot_image->os_version())
+        << "OS version and security patch level should be defined in the "
+           "chained vbmeta image instead.";
   }
 
   std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> boot_descriptor =
