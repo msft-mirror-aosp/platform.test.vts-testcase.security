@@ -19,7 +19,6 @@ module_testname := kernel_bluetooth/30149612
 module_src_files := kernel_bluetooth/30149612/poc.cpp
 module_cflags :=
 module_c_includes :=
-module_header_libraries :=
 module_static_libraries :=
 module_shared_libraries :=
 include $(build_poc_test)
@@ -29,7 +28,6 @@ module_testname := kernel_sound/28838221
 module_src_files := kernel_sound/28838221/poc.cpp
 module_cflags :=
 module_c_includes :=
-module_header_libraries :=
 module_static_libraries :=
 module_shared_libraries :=
 include $(build_poc_test)
@@ -39,7 +37,6 @@ module_testname := kernel_wifi/32219453
 module_src_files := kernel_wifi/32219453/poc.cpp
 module_cflags :=
 module_c_includes :=
-module_header_libraries := jni_headers
 module_static_libraries :=
 module_shared_libraries := libnl
 include $(build_poc_test)
@@ -48,7 +45,6 @@ module_testname := kernel_wifi/31707909
 module_src_files := kernel_wifi/31707909/poc.cpp
 module_cflags :=
 module_c_includes :=
-module_header_libraries :=
 module_static_libraries :=
 module_shared_libraries :=
 include $(build_poc_test)
@@ -57,7 +53,6 @@ module_testname := kernel_wifi/32402310
 module_src_files := kernel_wifi/32402310/poc.cpp
 module_cflags :=
 module_c_includes :=
-module_header_libraries := jni_headers
 module_static_libraries :=
 module_shared_libraries := libnl
 include $(build_poc_test)

@@ -14,8 +14,8 @@
 // limitations under the License.
 //
 
-package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
+vts_config {
+    name: "VtsTrebleSysProp",
 }
 
 python_test_host {
@@ -29,7 +29,7 @@ python_test_host {
         "vts_vndk_utils",
     ],
     data: [
-        ":private_property_contexts",
+        ":public_property_contexts",
     ],
     test_suites: [
         "vts",
@@ -44,8 +44,5 @@ python_test_host {
             enabled: true,
             embedded_launcher: true,
         }
-    },
-    test_options: {
-        unit_test: false,
-    },
+    }
 }
