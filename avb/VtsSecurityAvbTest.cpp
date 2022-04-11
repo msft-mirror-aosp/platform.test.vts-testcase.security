@@ -32,6 +32,7 @@
 #include <android-base/result.h>
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
+#include <android/api-level.h>
 #include <bootimg.h>
 #include <fs_avb/fs_avb_util.h>
 #include <fs_mgr/roots.h>
@@ -500,14 +501,23 @@ static uint32_t ReadApiLevelProps(
   return api_level;
 }
 
-static uint32_t GetBoardApiLevel() {
-  uint32_t device_api_level =
+static uint32_t GetProductFirstApiLevel() {
+  uint32_t product_api_level =
       ReadApiLevelProps({"ro.product.first_api_level", "ro.build.version.sdk"});
+  if (product_api_level == kCurrentApiLevel) {
+    ADD_FAILURE() << "Failed to determine product first API level";
+    return 0;
+  }
+  return product_api_level;
+}
+
+static uint32_t GetBoardApiLevel() {
+  uint32_t product_api_level = GetProductFirstApiLevel();
   uint32_t board_api_level =
       ReadApiLevelProps({"ro.board.api_level", "ro.board.first_api_level",
                          "ro.vendor.build.version.sdk"});
   uint32_t api_level =
-      board_api_level < device_api_level ? board_api_level : device_api_level;
+      board_api_level < product_api_level ? board_api_level : product_api_level;
   if (api_level == kCurrentApiLevel) {
     ADD_FAILURE() << "Failed to determine board API level";
     return 0;
@@ -517,10 +527,9 @@ static uint32_t GetBoardApiLevel() {
 
 bool ShouldSkipGkiTest() {
   /* Skip for devices launched before Android R. */
-  constexpr auto R_API_LEVEL = 30;
   uint32_t board_api_level = GetBoardApiLevel();
   GTEST_LOG_(INFO) << "Board API level is " << board_api_level;
-  if (board_api_level < R_API_LEVEL) {
+  if (board_api_level < __ANDROID_API_R__) {
     GTEST_LOG_(INFO) << "Exempt from GKI test due to old starting API level";
     return true;
   }
@@ -602,6 +611,14 @@ bool ShouldSkipGkiComplianceV2() {
     GTEST_LOG_(INFO)
         << "Exempt from GKI 2.0 test due to unmatched kernel version: "
         << kernel_version_major << "." << kernel_version_minor;
+    return true;
+  }
+
+  /* Skip for devices launched before Android S. */
+  uint32_t first_api_level = GetProductFirstApiLevel();
+  GTEST_LOG_(INFO) << "Product first API level is " << first_api_level;
+  if (first_api_level < __ANDROID_API_S__) {
+    GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on pre-S launched devices";
     return true;
   }
 
