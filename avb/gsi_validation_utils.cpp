@@ -15,6 +15,7 @@
  */
 
 #include <android-base/file.h>
+#include <android-base/properties.h>
 #include <gtest/gtest.h>
 #include <openssl/sha.h>
 
@@ -87,4 +88,47 @@ bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
     }
   }
   return false;
+}
+
+const uint32_t kCurrentApiLevel = 10000;
+
+static uint32_t ReadApiLevelProps(
+    const std::vector<std::string> &api_level_props) {
+  uint32_t api_level = kCurrentApiLevel;
+  for (const auto &api_level_prop : api_level_props) {
+    api_level = android::base::GetUintProperty<uint32_t>(api_level_prop,
+                                                         kCurrentApiLevel);
+    if (api_level != kCurrentApiLevel) {
+      break;
+    }
+  }
+  return api_level;
+}
+
+uint32_t GetProductFirstApiLevel() {
+  uint32_t product_api_level =
+      ReadApiLevelProps({"ro.product.first_api_level", "ro.build.version.sdk"});
+  if (product_api_level == kCurrentApiLevel) {
+    ADD_FAILURE() << "Failed to determine product first API level";
+    return 0;
+  }
+  return product_api_level;
+}
+
+uint32_t GetBoardApiLevel() {
+  // "ro.vendor.api_level" is added in Android T.
+  uint32_t vendor_api_level = ReadApiLevelProps({"ro.vendor.api_level"});
+  if (vendor_api_level != kCurrentApiLevel) {
+    return vendor_api_level;
+  }
+  // For pre-T devices, determine the board API level by ourselves.
+  uint32_t product_api_level = GetProductFirstApiLevel();
+  uint32_t board_api_level =
+      ReadApiLevelProps({"ro.board.api_level", "ro.board.first_api_level"});
+  uint32_t api_level = std::min(board_api_level, product_api_level);
+  if (api_level == kCurrentApiLevel) {
+    ADD_FAILURE() << "Failed to determine board API level";
+    return 0;
+  }
+  return api_level;
 }
