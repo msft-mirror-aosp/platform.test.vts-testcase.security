@@ -397,10 +397,7 @@ class GkiComplianceTest : public testing::Test {
     runtime_info = android::vintf::VintfObject::GetRuntimeInfo();
     ASSERT_NE(nullptr, runtime_info);
 
-    product_first_api_level =
-        android::base::GetIntProperty("ro.product.first_api_level", 0);
-    ASSERT_NE(0, product_first_api_level)
-        << "ro.product.first_api_level is undefined.";
+    product_first_api_level = GetProductFirstApiLevel();
 
     /* Skip for non arm64 that do not mandate GKI yet. */
     if (runtime_info->hardwareId() != "aarch64") {
@@ -418,17 +415,34 @@ class GkiComplianceTest : public testing::Test {
 
     GTEST_LOG_(INFO) << runtime_info->osName() << " "
                      << runtime_info->osRelease();
-    GTEST_LOG_(INFO) << "ro.product.first_api_level: "
-                     << product_first_api_level;
+    GTEST_LOG_(INFO) << "Product first API level: " << product_first_api_level;
   }
+
+  bool ShouldSkipGkiComplianceV2();
 
   std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info;
   int product_first_api_level;
 };
 
+bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
+  /* Skip for devices if the kernel version is not >= 5.10. */
+  if (runtime_info->kernelVersion().dropMinor() <
+      android::vintf::Version{5, 10}) {
+    GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on kernel version: "
+                     << runtime_info->kernelVersion();
+    return true;
+  }
+  /* Skip for devices launched before Android S. */
+  if (product_first_api_level < __ANDROID_API_S__) {
+    GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on pre-S launched devices";
+    return true;
+  }
+  return false;
+}
+
 TEST_F(GkiComplianceTest, GkiComplianceV1) {
   if (product_first_api_level < __ANDROID_API_R__) {
-    GTEST_SKIP() << "Exempt from GKI 1.0 test: ro.product.first_api_level ("
+    GTEST_SKIP() << "Exempt from GKI 1.0 test: product first API level ("
                  << product_first_api_level << ") < " << __ANDROID_API_R__;
   }
   /* Skip for devices if the kernel version is not 5.4. */
@@ -477,11 +491,8 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
 
 // Verify the entire boot image.
 TEST_F(GkiComplianceTest, GkiComplianceV2) {
-  /* Skip for devices if the kernel version is not >= 5.10. */
-  if (runtime_info->kernelVersion().dropMinor() <
-      android::vintf::Version{5, 10}) {
-    GTEST_SKIP() << "Exempt from GKI 2.0 test on kernel version: "
-                 << runtime_info->kernelVersion();
+  if (ShouldSkipGkiComplianceV2()) {
+    GTEST_SKIP() << "Skipping GkiComplianceV2 test";
   }
 
   // GKI 2.0 ensures getKernelLevel() to return valid value.
@@ -503,31 +514,9 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
            "the generic kernel but not the generic ramdisk.";
     EXPECT_EQ(0, boot_image->ramdisk_size())
         << "'boot' partition mustn't include a ramdisk image.";
-
-    // Verify the AVB property descriptors in boot_signature agree with property
-    // descriptors in the end-of-partition chained vbmeta.
-    std::vector<android::fs_mgr::VBMetaData> vbmeta_image;
-    {
-      const auto boot_path = GetBlockDevicePath("boot");
-      std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
-          android::fs_mgr::LoadAndVerifyVbmetaByPath(
-              boot_path, "boot", /* expected_key_blob */ "",
-              /* allow verification error */ true,
-              /* rollback_protection */ false,
-              /* is_chained_vbmeta */ false, /* out_public_key_data */ nullptr,
-              /* out_verification_disabled */ nullptr,
-              /* out_verify_result */ nullptr);
-      ASSERT_NE(nullptr, vbmeta)
-          << "Failed to load chained vbmeta of: " << boot_path;
-      vbmeta_image.push_back(std::move(*vbmeta));
-    }
-
-    const auto spl_prop = "boot.security_patch"s;
-    const auto gki_spl = GetAvbProperty(spl_prop, boot_signature_images);
-    const auto vbmeta_spl = GetAvbProperty(spl_prop, vbmeta_image);
-    EXPECT_FALSE(gki_spl.empty());
-    EXPECT_EQ(gki_spl, vbmeta_spl)
-        << "Boot signature and chained vbmeta SPL mismatch.";
+    EXPECT_EQ(0, boot_image->os_version())
+        << "OS version and security patch level should be defined in the "
+           "chained vbmeta image instead.";
   }
 
   std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> boot_descriptor =
@@ -540,11 +529,8 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
 
 // Verify only the 'generic_kernel' descriptor.
 TEST_F(GkiComplianceTest, GkiComplianceV2_kernel) {
-  /* Skip for devices if the kernel version is not >= 5.10. */
-  if (runtime_info->kernelVersion().dropMinor() <
-      android::vintf::Version{5, 10}) {
-    GTEST_SKIP() << "Exempt from GKI 2.0 test on kernel version: "
-                 << runtime_info->kernelVersion();
+  if (ShouldSkipGkiComplianceV2()) {
+    GTEST_SKIP() << "Skipping GkiComplianceV2 test";
   }
 
   // GKI 2.0 ensures getKernelLevel() to return valid value.
