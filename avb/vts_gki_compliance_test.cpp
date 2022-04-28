@@ -397,10 +397,7 @@ class GkiComplianceTest : public testing::Test {
     runtime_info = android::vintf::VintfObject::GetRuntimeInfo();
     ASSERT_NE(nullptr, runtime_info);
 
-    product_first_api_level =
-        android::base::GetIntProperty("ro.product.first_api_level", 0);
-    ASSERT_NE(0, product_first_api_level)
-        << "ro.product.first_api_level is undefined.";
+    product_first_api_level = GetProductFirstApiLevel();
 
     /* Skip for non arm64 that do not mandate GKI yet. */
     if (runtime_info->hardwareId() != "aarch64") {
@@ -418,17 +415,34 @@ class GkiComplianceTest : public testing::Test {
 
     GTEST_LOG_(INFO) << runtime_info->osName() << " "
                      << runtime_info->osRelease();
-    GTEST_LOG_(INFO) << "ro.product.first_api_level: "
-                     << product_first_api_level;
+    GTEST_LOG_(INFO) << "Product first API level: " << product_first_api_level;
   }
+
+  bool ShouldSkipGkiComplianceV2();
 
   std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info;
   int product_first_api_level;
 };
 
+bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
+  /* Skip for devices if the kernel version is not >= 5.10. */
+  if (runtime_info->kernelVersion().dropMinor() <
+      android::vintf::Version{5, 10}) {
+    GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on kernel version: "
+                     << runtime_info->kernelVersion();
+    return true;
+  }
+  /* Skip for devices launched before Android S. */
+  if (product_first_api_level < __ANDROID_API_S__) {
+    GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on pre-S launched devices";
+    return true;
+  }
+  return false;
+}
+
 TEST_F(GkiComplianceTest, GkiComplianceV1) {
   if (product_first_api_level < __ANDROID_API_R__) {
-    GTEST_SKIP() << "Exempt from GKI 1.0 test: ro.product.first_api_level ("
+    GTEST_SKIP() << "Exempt from GKI 1.0 test: product first API level ("
                  << product_first_api_level << ") < " << __ANDROID_API_R__;
   }
   /* Skip for devices if the kernel version is not 5.4. */
@@ -477,11 +491,8 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
 
 // Verify the entire boot image.
 TEST_F(GkiComplianceTest, GkiComplianceV2) {
-  /* Skip for devices if the kernel version is not >= 5.10. */
-  if (runtime_info->kernelVersion().dropMinor() <
-      android::vintf::Version{5, 10}) {
-    GTEST_SKIP() << "Exempt from GKI 2.0 test on kernel version: "
-                 << runtime_info->kernelVersion();
+  if (ShouldSkipGkiComplianceV2()) {
+    GTEST_SKIP() << "Skipping GkiComplianceV2 test";
   }
 
   // GKI 2.0 ensures getKernelLevel() to return valid value.
@@ -518,11 +529,8 @@ TEST_F(GkiComplianceTest, GkiComplianceV2) {
 
 // Verify only the 'generic_kernel' descriptor.
 TEST_F(GkiComplianceTest, GkiComplianceV2_kernel) {
-  /* Skip for devices if the kernel version is not >= 5.10. */
-  if (runtime_info->kernelVersion().dropMinor() <
-      android::vintf::Version{5, 10}) {
-    GTEST_SKIP() << "Exempt from GKI 2.0 test on kernel version: "
-                 << runtime_info->kernelVersion();
+  if (ShouldSkipGkiComplianceV2()) {
+    GTEST_SKIP() << "Skipping GkiComplianceV2 test";
   }
 
   // GKI 2.0 ensures getKernelLevel() to return valid value.
