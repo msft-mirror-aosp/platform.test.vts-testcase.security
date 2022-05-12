@@ -144,7 +144,8 @@ class VtsTrebleSysPropTest(unittest.TestCase):
     ]
 
     _VENDOR_OR_ODM_NAMESPACES_WHITELIST = [
-            "persist.camera." # b/138545066 remove this
+            "persist.camera.",
+            "persist.dumpstate.verbose_logging.enabled",
     ]
 
     _VENDOR_TYPE_PREFIX = "vendor_"
