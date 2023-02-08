@@ -24,11 +24,15 @@
 #include <android-base/file.h>
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
+#include <android-base/result-gmock.h>
 #include <android-base/strings.h>
+#include <gmock/gmock.h>
 #include <google/protobuf/repeated_field.h>
 #include <google/protobuf/text_format.h>
 #include <gtest/gtest.h>
 #include <kver/kernel_release.h>
+#include <libvts_vintf_test_common/common.h>
+#include <vintf/Version.h>
 #include <vintf/VintfObject.h>
 #include <vintf/parse_string.h>
 
@@ -37,6 +41,7 @@
 
 namespace {
 
+using android::base::testing::Ok;
 using KernelVersionMatrix = std::map<uint64_t, AndroidReleaseRequirement>;
 
 std::ostream& operator<<(std::ostream& os, const Kmi& kmi) {
@@ -278,6 +283,11 @@ struct ExpectTrueOnRelease : public std::stringstream {
   bool cond_;
 };
 
+bool IsGrf() {
+  return !android::base::GetProperty("ro.board.first_api_level", "").empty() ||
+         !android::base::GetProperty("ro.board.api_level", "").empty();
+}
+
 TEST(KernelVersionTest, AgainstPlatformRelease) {
   auto raw_kernel_version_matrix = ReadRawKernelVersionMatrix();
   ASSERT_TRUE(raw_kernel_version_matrix.has_value());
@@ -304,11 +314,8 @@ TEST(KernelVersionTest, AgainstPlatformRelease) {
 
   bool is_launch = product_first_api_level >= android_platform_release;
 
-  auto is_grf =
-      !android::base::GetProperty("ro.board.first_api_level", "").empty();
-
   auto requirements = GetKernelVersionRequirements(
-      *kernel_version_matrix, android_platform_release, is_launch, is_grf);
+      *kernel_version_matrix, android_platform_release, is_launch, IsGrf());
   ASSERT_NE(requirements, nullptr);
 
   auto actual = GetActualKmi();
@@ -317,6 +324,34 @@ TEST(KernelVersionTest, AgainstPlatformRelease) {
   std::string error;
   ExpectTrueOnRelease(KernelVersionIsSupported(*actual, *requirements, &error))
       << error;
+}
+
+TEST(KernelVersionTest, GrfDevicesMustUseLatestKernel) {
+  if (!IsGrf()) {
+    GTEST_SKIP() << "Non-GRF device kernel requirements are checked in "
+                    "SystemVendorTest.KernelCompatibility";
+  }
+
+  auto board_api_level = GetBoardApiLevel();
+  auto corresponding_vintf_level =
+      android::vintf::testing::GetFcmVersionFromApiLevel(board_api_level);
+  ASSERT_THAT(corresponding_vintf_level, Ok());
+
+  auto latest_min_lts =
+      android::vintf::VintfObject::GetInstance()->getLatestMinLtsAtFcmVersion(
+          *corresponding_vintf_level);
+  ASSERT_THAT(latest_min_lts, Ok());
+  auto runtime_info =
+      android::vintf::VintfObject::GetInstance()->getRuntimeInfo(
+          android::vintf::RuntimeInfo::FetchFlag::CPU_VERSION);
+  ASSERT_NE(runtime_info, nullptr);
+  auto kernel_version = runtime_info->kernelVersion();
+
+  ASSERT_GE(kernel_version, *latest_min_lts)
+      << "[VSR-3.4.1-001] CHIPSETs that are on GRF and are frozen on API level "
+      << board_api_level << " (corresponding to VINTF level "
+      << *corresponding_vintf_level << ") must use kernel version ("
+      << *latest_min_lts << ")+, but kernel version is " << kernel_version;
 }
 
 }  // namespace
