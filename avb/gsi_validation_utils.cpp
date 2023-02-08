@@ -105,6 +105,15 @@ static uint32_t ReadApiLevelProps(
   return api_level;
 }
 
+uint32_t GetSdkLevel() {
+  uint32_t sdk_level = ReadApiLevelProps({"ro.build.version.sdk"});
+  if (sdk_level == kCurrentApiLevel) {
+    ADD_FAILURE() << "Failed to determine SDK level";
+    return 0;
+  }
+  return sdk_level;
+}
+
 uint32_t GetProductFirstApiLevel() {
   uint32_t product_api_level =
       ReadApiLevelProps({"ro.product.first_api_level", "ro.build.version.sdk"});
@@ -131,4 +140,8 @@ uint32_t GetBoardApiLevel() {
     return 0;
   }
   return api_level;
+}
+
+bool IsReleasedAndroidVersion() {
+  return android::base::GetProperty("ro.build.version.codename", "") == "REL";
 }
