@@ -73,8 +73,10 @@ cc_test {
         "kernel_version_matrix.proto",
     ],
     static_libs: [
+        "libgmock",
         "libkver",
         "libvintf",
+        "libvts_vintf_test_common",
     ],
     proto: {
         type: "full",
