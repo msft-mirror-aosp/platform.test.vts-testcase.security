@@ -26,6 +26,7 @@
 #include <android-base/properties.h>
 #include <android-base/result-gmock.h>
 #include <android-base/strings.h>
+#include <android/api-level.h>
 #include <gmock/gmock.h>
 #include <google/protobuf/repeated_field.h>
 #include <google/protobuf/text_format.h>
@@ -333,6 +334,12 @@ TEST(KernelVersionTest, GrfDevicesMustUseLatestKernel) {
   }
 
   auto board_api_level = GetBoardApiLevel();
+
+  if (board_api_level <= __ANDROID_API_R__) {
+    GTEST_SKIP() << "[VSR-3.4.1-001] does not enforce latest kernel x.y for "
+                 << "board_api_level == " << board_api_level << " <= R";
+  }
+
   auto corresponding_vintf_level =
       android::vintf::testing::GetFcmVersionFromApiLevel(board_api_level);
   ASSERT_THAT(corresponding_vintf_level, Ok());
