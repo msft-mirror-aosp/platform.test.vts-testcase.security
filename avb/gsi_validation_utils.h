@@ -88,6 +88,10 @@ std::unique_ptr<ShaHasher> CreateShaHasher(const std::string &algorithm);
 // Checks whether the public key is an official GSI key or not.
 bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate);
 
+uint32_t GetSdkLevel();
+
 uint32_t GetProductFirstApiLevel();
 
 uint32_t GetBoardApiLevel();
+
+bool IsReleasedAndroidVersion();
