@@ -399,9 +399,10 @@ class GkiComplianceTest : public testing::Test {
 
     product_first_api_level = GetProductFirstApiLevel();
 
-    /* Skip for non arm64 that do not mandate GKI yet. */
-    if (runtime_info->hardwareId() != "aarch64") {
-      GTEST_SKIP() << "Exempt from GKI test on non-arm64 devices";
+    /* Skip for non-arm64 kernels that do not mandate GKI yet. */
+    if (runtime_info->hardwareId() != "aarch64" &&
+        runtime_info->hardwareId() != "armv8l") {
+      GTEST_SKIP() << "Exempt from GKI test on non-arm64 kernel devices";
     }
 
     /* Skip for form factors that do not mandate GKI yet */
