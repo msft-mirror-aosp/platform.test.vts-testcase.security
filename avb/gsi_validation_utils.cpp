@@ -124,7 +124,7 @@ uint32_t GetProductFirstApiLevel() {
   return product_api_level;
 }
 
-uint32_t GetBoardApiLevel() {
+uint32_t GetVendorApiLevel() {
   // "ro.vendor.api_level" is added in Android T.
   uint32_t vendor_api_level = ReadApiLevelProps({"ro.vendor.api_level"});
   if (vendor_api_level != kCurrentApiLevel) {
@@ -136,10 +136,19 @@ uint32_t GetBoardApiLevel() {
       ReadApiLevelProps({"ro.board.api_level", "ro.board.first_api_level"});
   uint32_t api_level = std::min(board_api_level, product_api_level);
   if (api_level == kCurrentApiLevel) {
-    ADD_FAILURE() << "Failed to determine board API level";
+    ADD_FAILURE() << "Failed to determine vendor API level";
     return 0;
   }
   return api_level;
+}
+
+std::optional<uint32_t> GetBoardApiLevel() {
+  uint32_t board_api_level =
+      ReadApiLevelProps({"ro.board.api_level", "ro.board.first_api_level"});
+  if (board_api_level == kCurrentApiLevel) {
+    return std::nullopt;
+  }
+  return board_api_level;
 }
 
 bool IsReleasedAndroidVersion() {
