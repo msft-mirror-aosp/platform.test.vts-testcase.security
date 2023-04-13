@@ -333,15 +333,21 @@ TEST(KernelVersionTest, GrfDevicesMustUseLatestKernel) {
                     "SystemVendorTest.KernelCompatibility";
   }
 
+  // Use board API level, not vendor API level, to ignore
+  // ro.product.first_api_level. ro.vendor.api_level is considering
+  // the ro.product.api_level which could potentially yield a lower api_level
+  // than the ro.board.{first_,}api_level.
   auto board_api_level = GetBoardApiLevel();
+  ASSERT_TRUE(board_api_level.has_value())
+      << "Unable to determine board API level on GRF devices";
 
-  if (board_api_level <= __ANDROID_API_R__) {
+  if (*board_api_level <= __ANDROID_API_R__) {
     GTEST_SKIP() << "[VSR-3.4.1-001] does not enforce latest kernel x.y for "
-                 << "board_api_level == " << board_api_level << " <= R";
+                 << "board_api_level == " << *board_api_level << " <= R";
   }
 
   auto corresponding_vintf_level =
-      android::vintf::testing::GetFcmVersionFromApiLevel(board_api_level);
+      android::vintf::testing::GetFcmVersionFromApiLevel(*board_api_level);
   ASSERT_THAT(corresponding_vintf_level, Ok());
 
   auto latest_min_lts =
@@ -356,7 +362,7 @@ TEST(KernelVersionTest, GrfDevicesMustUseLatestKernel) {
 
   ASSERT_GE(kernel_version, *latest_min_lts)
       << "[VSR-3.4.1-001] CHIPSETs that are on GRF and are frozen on API level "
-      << board_api_level << " (corresponding to VINTF level "
+      << *board_api_level << " (corresponding to VINTF level "
       << *corresponding_vintf_level << ") must use kernel version ("
       << *latest_min_lts << ")+, but kernel version is " << kernel_version;
 }
