@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -92,6 +93,10 @@ uint32_t GetSdkLevel();
 
 uint32_t GetProductFirstApiLevel();
 
-uint32_t GetBoardApiLevel();
+uint32_t GetVendorApiLevel();
+
+// Return board API level on GRF devices.
+// On non-GRF, this function will return std::nullopt.
+std::optional<uint32_t> GetBoardApiLevel();
 
 bool IsReleasedAndroidVersion();
