@@ -244,7 +244,7 @@ bool KernelVersionIsSupported(
       continue;  // check next item
     }
 
-    if (req.android_release() != actual.android_release()) {
+    if (req.android_release() != actual.android_release().value_or(0)) {
       GTEST_LOG_(INFO) << "Failed to match " << actual << " against required "
                        << req
                        << ": The Android release part of KMI does not match.";
