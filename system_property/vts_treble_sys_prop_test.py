@@ -453,8 +453,8 @@ class VtsTrebleSysPropTest(unittest.TestCase):
         Raises:
             IOError if the path does not exist or has invalid permission bits.
         """
-        cmd = "stat -c %%a %s" % path
-        out, err, return_code =  self.dut.Execute(cmd)
+        cmd = ["stat", "-c", "%a", path]
+        out, err, return_code =  self.dut.Execute(*cmd)
         logging.debug("%s: Shell command '%s' out: %s, err: %s, return_code: %s", path, cmd, out, err, return_code)
         # checks the exit code
         if return_code != 0:
