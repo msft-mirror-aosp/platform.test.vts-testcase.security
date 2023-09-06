@@ -413,7 +413,8 @@ class VtsTrebleSysPropTest(unittest.TestCase):
         resource_name = os.path.basename(self._PUBLIC_PROPERTY_CONTEXTS_FILE_PATH)
         package_name = os.path.dirname(
             self._PUBLIC_PROPERTY_CONTEXTS_FILE_PATH).replace(os.path.sep, '.')
-        with resources.open_text(package_name, resource_name) as resource:
+        with resources.files(package_name).joinpath(resource_name).open('r') \
+            as resource:
             pub_property_dict = self._ParsePropertyDictFromPropertyContextsFile(
                 resource, True)
         for name in pub_property_dict:
