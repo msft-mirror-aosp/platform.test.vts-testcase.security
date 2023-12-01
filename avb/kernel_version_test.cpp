@@ -285,8 +285,7 @@ struct ExpectTrueOnRelease : public std::stringstream {
 };
 
 bool IsGrf() {
-  return !android::base::GetProperty("ro.board.first_api_level", "").empty() ||
-         !android::base::GetProperty("ro.board.api_level", "").empty();
+  return !android::base::GetProperty("ro.board.first_api_level", "").empty();
 }
 
 // Returns true if the device has the specified feature.
