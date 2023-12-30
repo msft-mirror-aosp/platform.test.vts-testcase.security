@@ -32,6 +32,10 @@ cc_defaults {
         "libfs_mgr",
         "liblog",
     ],
+    shared_libs: [
+        "libandroidfw",
+        "libutils",
+    ],
     header_libs: [
         "libstorage_literals_headers",
     ],
