@@ -50,6 +50,19 @@ bool HexToBytes(const std::string &hex, std::vector<uint8_t> *bytes) {
   return true;
 }
 
+const char kNibble2Hex[16] = {'0', '1', '2', '3', '4', '5', '6', '7',
+                              '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+
+std::string BytesToHex(const std::vector<uint8_t> &bytes) {
+  std::string retval;
+  retval.reserve(bytes.size() * 2 + 1);
+  for (uint8_t byte : bytes) {
+    retval.push_back(kNibble2Hex[0x0F & (byte >> 4)]);
+    retval.push_back(kNibble2Hex[0x0F & byte]);
+  }
+  return retval;
+}
+
 std::unique_ptr<ShaHasher> CreateShaHasher(const std::string &algorithm) {
   if (algorithm == "sha1") {
     return std::make_unique<ShaHasherImpl<SHA_CTX>>(

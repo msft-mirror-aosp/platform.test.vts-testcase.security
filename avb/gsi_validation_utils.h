@@ -26,6 +26,8 @@ uint8_t HexDigitToByte(char c);
 
 bool HexToBytes(const std::string &hex, std::vector<uint8_t> *bytes);
 
+std::string BytesToHex(const std::vector<uint8_t> &bytes);
+
 // The abstract class of SHA algorithms.
 class ShaHasher {
  protected:

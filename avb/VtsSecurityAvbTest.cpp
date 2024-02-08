@@ -19,6 +19,7 @@
 #include <array>
 #include <list>
 #include <map>
+#include <optional>
 #include <set>
 #include <tuple>
 #include <vector>
@@ -574,7 +575,7 @@ static void LoadAndVerifyAvbSlotDataForCurrentSlot(
   const char* requested_partitions[] = {nullptr};
 
   // AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR is needed for boot-debug.img
-  // or vendor_boot-debug.img, which is not releae key signed.
+  // or vendor_boot-debug.img, which is not release key signed.
   auto avb_ops = avb_ops_user_new();
   auto verify_result =
       avb_slot_verify(avb_ops, requested_partitions, suffix.c_str(),
@@ -622,4 +623,52 @@ TEST(AvbTest, HashtreeAlgorithm) {
           reinterpret_cast<const AvbHashtreeDescriptor*>(descriptors[n]));
     }
   }
+}
+
+static constexpr char VBMETA_PROPERTY[] = "ro.boot.vbmeta.digest";
+
+static std::optional<std::vector<uint8_t>> GetVbmetaDigestProperty() {
+  std::string default_value = "not found";
+  auto vbmeta_string =
+      ::android::base::GetProperty(VBMETA_PROPERTY, default_value);
+  if (vbmeta_string == default_value) {
+    return std::nullopt;
+  }
+
+  std::vector<uint8_t> vbmeta_digest;
+  if (HexToBytes(vbmeta_string, &vbmeta_digest)) {
+    return vbmeta_digest;
+  } else {
+    return std::nullopt;
+  }
+}
+
+// Check that a calculated vbmeta digest matches the Android property value.
+TEST(AvbTest, CalculatedVbmetaMatchesProperty) {
+  // Get the vbmeta digest value from the Android property.
+  auto vbmeta_digest = GetVbmetaDigestProperty();
+  if (!vbmeta_digest.has_value()) {
+    GTEST_SKIP() << "No " << VBMETA_PROPERTY << " property value available";
+  }
+
+  AvbSlotVerifyData *avb_slot_data;
+  LoadAndVerifyAvbSlotDataForCurrentSlot(&avb_slot_data);
+
+  // Unfortunately, bootloader is not required to report the algorithm used
+  // to calculate the digest. There are only two supported options though,
+  // SHA256 and SHA512. The VBMeta digest property value must match one of
+  // these.
+  std::vector<uint8_t> digest256(AVB_SHA256_DIGEST_SIZE);
+  std::vector<uint8_t> digest512(AVB_SHA512_DIGEST_SIZE);
+
+  avb_slot_verify_data_calculate_vbmeta_digest(
+      avb_slot_data, AVB_DIGEST_TYPE_SHA256, digest256.data());
+  avb_slot_verify_data_calculate_vbmeta_digest(
+      avb_slot_data, AVB_DIGEST_TYPE_SHA512, digest512.data());
+
+  ASSERT_TRUE((vbmeta_digest == digest256) || (vbmeta_digest == digest512))
+      << "vbmeta digest from property (" << VBMETA_PROPERTY << "="
+      << BytesToHex(vbmeta_digest.value())
+      << ") does not match computed digest (sha256: " << BytesToHex(digest256)
+      << ", sha512: " << BytesToHex(digest512) << ")";
 }
