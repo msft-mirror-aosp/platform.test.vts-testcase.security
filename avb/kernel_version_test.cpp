@@ -285,8 +285,25 @@ struct ExpectTrueOnRelease : public std::stringstream {
 };
 
 bool IsGrf() {
-  return !android::base::GetProperty("ro.board.first_api_level", "").empty() ||
-         !android::base::GetProperty("ro.board.api_level", "").empty();
+  return !android::base::GetProperty("ro.board.first_api_level", "").empty();
+}
+
+// Returns true if the device has the specified feature.
+bool DeviceSupportsFeature(const char* feature) {
+  bool device_supports_feature = false;
+  FILE* p = popen("pm list features", "re");
+  if (p) {
+    char* line = NULL;
+    size_t len = 0;
+    while (getline(&line, &len, p) > 0) {
+      if (strstr(line, feature)) {
+        device_supports_feature = true;
+        break;
+      }
+    }
+    pclose(p);
+  }
+  return device_supports_feature;
 }
 
 TEST(KernelVersionTest, AgainstPlatformRelease) {
@@ -312,6 +329,13 @@ TEST(KernelVersionTest, AgainstPlatformRelease) {
       << "Product first API level " << product_first_api_level
       << " should not exceed the platform release " << android_platform_release
       << ".";
+
+  const static bool is_tv_device =
+      DeviceSupportsFeature("android.software.leanback");
+  if (product_first_api_level <= 33 && is_tv_device) {
+    GTEST_SKIP()
+        << "Exempt from GKI test on TV devices launched before Android U";
+  }
 
   bool is_launch = product_first_api_level >= android_platform_release;
 
