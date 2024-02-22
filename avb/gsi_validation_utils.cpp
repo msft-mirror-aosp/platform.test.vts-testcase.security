@@ -238,6 +238,13 @@ bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
       "q-gsi.avbpubkey", "r-gsi.avbpubkey",    "s-gsi.avbpubkey",
       "t-gsi.avbpubkey", "qcar-gsi.avbpubkey",
   };
+  std::vector<std::string> allowed_oem_key_names = {
+  };
+  if (!IsGoDevice()) {
+    allowed_key_names.insert(allowed_key_names.end(),
+                             allowed_oem_key_names.begin(),
+                             allowed_oem_key_names.end());
+  }
   for (const auto &key_name : allowed_key_names) {
     const auto key_path = exec_dir + "/" + key_name;
     std::string allowed_key_blob;
