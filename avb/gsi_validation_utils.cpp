@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
+#include <memory>
+
 #include <android-base/file.h>
 #include <android-base/properties.h>
 #include <android/api-level.h>
 #include <androidfw/AssetManager.h>
 #include <androidfw/ResourceTypes.h>
 #include <gtest/gtest.h>
-#include <memory>
 #include <openssl/sha.h>
 #include <stdio.h>
 #include <utils/String8.h>
@@ -252,6 +253,7 @@ bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
       "t-gsi.avbpubkey", "qcar-gsi.avbpubkey",
   };
   std::vector<std::string> allowed_oem_key_names = {
+      "gki-oem-2024.avbpubkey",
   };
   if (!IsGoDevice()) {
     allowed_key_names.insert(allowed_key_names.end(),
