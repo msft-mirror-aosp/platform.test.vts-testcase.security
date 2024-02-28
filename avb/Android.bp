@@ -45,6 +45,7 @@ cc_defaults {
         ":s-gsi_avbpubkey",
         ":t-gsi_avbpubkey",
         ":qcar-gsi_avbpubkey",
+        ":gki-oem-2024_avbpubkey",
     ],
     cflags: [
         "-Wall",
