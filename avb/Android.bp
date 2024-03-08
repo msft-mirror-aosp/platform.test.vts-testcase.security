@@ -99,3 +99,13 @@ cc_test {
 
     require_root: true,
 }
+
+filegroup {
+    name: "gsi_validation_utils_cpp",
+    srcs: ["gsi_validation_utils.cpp"],
+}
+
+filegroup {
+    name: "vts_gki_compliance_test_cpp",
+    srcs: ["vts_gki_compliance_test.cpp"],
+}
