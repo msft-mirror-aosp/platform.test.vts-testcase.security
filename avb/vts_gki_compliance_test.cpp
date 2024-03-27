@@ -386,11 +386,6 @@ class GkiComplianceTest : public testing::Test {
       GTEST_SKIP() << "Exempt from GKI test on non-arm64 kernel devices";
     }
 
-    /* Skip for form factors that do not mandate GKI yet */
-    if (IsTvDevice()) {
-      GTEST_SKIP() << "Exempt from GKI test on TV devices";
-    }
-
     GTEST_LOG_(INFO) << runtime_info->osName() << " "
                      << runtime_info->osRelease();
     GTEST_LOG_(INFO) << "Product first API level: " << product_first_api_level;
@@ -428,6 +423,22 @@ bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
     }
     if (product_first_api_level < __ANDROID_API_T__) {
       GTEST_LOG_(INFO) << "Exempt from GKI test on pre-T launched devices";
+      return true;
+    }
+  }
+  /*
+   * Skip for TV devices if the kernel version is not >= 5.15 or
+   * the device is launched before Android U.
+   */
+  if (IsTvDevice()) {
+    if (runtime_info->kernelVersion().dropMinor() <
+        android::vintf::Version{5, 15}) {
+      GTEST_LOG_(INFO) << "Exempt from GKI test on kernel version: "
+                       << runtime_info->kernelVersion();
+      return true;
+    }
+    if (product_first_api_level < __ANDROID_API_U__) {
+      GTEST_LOG_(INFO) << "Exempt from GKI test on pre-U launched TV devices";
       return true;
     }
   }
