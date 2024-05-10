@@ -50,6 +50,19 @@ bool HexToBytes(const std::string &hex, std::vector<uint8_t> *bytes) {
   return true;
 }
 
+const char kNibble2Hex[16] = {'0', '1', '2', '3', '4', '5', '6', '7',
+                              '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+
+std::string BytesToHex(const std::vector<uint8_t> &bytes) {
+  std::string retval;
+  retval.reserve(bytes.size() * 2 + 1);
+  for (uint8_t byte : bytes) {
+    retval.push_back(kNibble2Hex[0x0F & (byte >> 4)]);
+    retval.push_back(kNibble2Hex[0x0F & byte]);
+  }
+  return retval;
+}
+
 std::unique_ptr<ShaHasher> CreateShaHasher(const std::string &algorithm) {
   if (algorithm == "sha1") {
     return std::make_unique<ShaHasherImpl<SHA_CTX>>(
@@ -124,7 +137,7 @@ uint32_t GetProductFirstApiLevel() {
   return product_api_level;
 }
 
-uint32_t GetBoardApiLevel() {
+uint32_t GetVendorApiLevel() {
   // "ro.vendor.api_level" is added in Android T.
   uint32_t vendor_api_level = ReadApiLevelProps({"ro.vendor.api_level"});
   if (vendor_api_level != kCurrentApiLevel) {
@@ -136,10 +149,19 @@ uint32_t GetBoardApiLevel() {
       ReadApiLevelProps({"ro.board.api_level", "ro.board.first_api_level"});
   uint32_t api_level = std::min(board_api_level, product_api_level);
   if (api_level == kCurrentApiLevel) {
-    ADD_FAILURE() << "Failed to determine board API level";
+    ADD_FAILURE() << "Failed to determine vendor API level";
     return 0;
   }
   return api_level;
+}
+
+std::optional<uint32_t> GetBoardApiLevel() {
+  uint32_t board_api_level =
+      ReadApiLevelProps({"ro.board.api_level", "ro.board.first_api_level"});
+  if (board_api_level == kCurrentApiLevel) {
+    return std::nullopt;
+  }
+  return board_api_level;
 }
 
 bool IsReleasedAndroidVersion() {

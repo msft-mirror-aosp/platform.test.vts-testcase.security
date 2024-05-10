@@ -26,6 +26,7 @@
 #include <android-base/properties.h>
 #include <android-base/result-gmock.h>
 #include <android-base/strings.h>
+#include <android/api-level.h>
 #include <gmock/gmock.h>
 #include <google/protobuf/repeated_field.h>
 #include <google/protobuf/text_format.h>
@@ -243,7 +244,7 @@ bool KernelVersionIsSupported(
       continue;  // check next item
     }
 
-    if (req.android_release() != actual.android_release()) {
+    if (req.android_release() != actual.android_release().value_or(0)) {
       GTEST_LOG_(INFO) << "Failed to match " << actual << " against required "
                        << req
                        << ": The Android release part of KMI does not match.";
@@ -284,8 +285,25 @@ struct ExpectTrueOnRelease : public std::stringstream {
 };
 
 bool IsGrf() {
-  return !android::base::GetProperty("ro.board.first_api_level", "").empty() ||
-         !android::base::GetProperty("ro.board.api_level", "").empty();
+  return !android::base::GetProperty("ro.board.first_api_level", "").empty();
+}
+
+// Returns true if the device has the specified feature.
+bool DeviceSupportsFeature(const char* feature) {
+  bool device_supports_feature = false;
+  FILE* p = popen("pm list features", "re");
+  if (p) {
+    char* line = NULL;
+    size_t len = 0;
+    while (getline(&line, &len, p) > 0) {
+      if (strstr(line, feature)) {
+        device_supports_feature = true;
+        break;
+      }
+    }
+    pclose(p);
+  }
+  return device_supports_feature;
 }
 
 TEST(KernelVersionTest, AgainstPlatformRelease) {
@@ -312,6 +330,13 @@ TEST(KernelVersionTest, AgainstPlatformRelease) {
       << " should not exceed the platform release " << android_platform_release
       << ".";
 
+  const static bool is_tv_device =
+      DeviceSupportsFeature("android.software.leanback");
+  if (product_first_api_level <= 33 && is_tv_device) {
+    GTEST_SKIP()
+        << "Exempt from GKI test on TV devices launched before Android U";
+  }
+
   bool is_launch = product_first_api_level >= android_platform_release;
 
   auto requirements = GetKernelVersionRequirements(
@@ -332,9 +357,17 @@ TEST(KernelVersionTest, GrfDevicesMustUseLatestKernel) {
                     "SystemVendorTest.KernelCompatibility";
   }
 
-  auto board_api_level = GetBoardApiLevel();
+  auto vendor_api_level = GetVendorApiLevel();
+  ASSERT_TRUE(vendor_api_level != 0)
+      << "Unable to determine board API level on GRF devices";
+
+  if (vendor_api_level <= __ANDROID_API_R__) {
+    GTEST_SKIP() << "[VSR-3.4.1-001] does not enforce latest kernel x.y for "
+                 << "vendor_api_level == " << vendor_api_level << " <= R";
+  }
+
   auto corresponding_vintf_level =
-      android::vintf::testing::GetFcmVersionFromApiLevel(board_api_level);
+      android::vintf::testing::GetFcmVersionFromApiLevel(vendor_api_level);
   ASSERT_THAT(corresponding_vintf_level, Ok());
 
   auto latest_min_lts =
@@ -349,7 +382,7 @@ TEST(KernelVersionTest, GrfDevicesMustUseLatestKernel) {
 
   ASSERT_GE(kernel_version, *latest_min_lts)
       << "[VSR-3.4.1-001] CHIPSETs that are on GRF and are frozen on API level "
-      << board_api_level << " (corresponding to VINTF level "
+      << vendor_api_level << " (corresponding to VINTF level "
       << *corresponding_vintf_level << ") must use kernel version ("
       << *latest_min_lts << ")+, but kernel version is " << kernel_version;
 }
