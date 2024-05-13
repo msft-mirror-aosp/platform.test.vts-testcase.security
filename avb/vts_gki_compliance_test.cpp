@@ -453,6 +453,9 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
   if (IsAutomotiveDevice()) {
     GTEST_SKIP() << "Skip GKI vbmeta check for automotive devices";
   }
+  if (IsTvDevice()) {
+    GTEST_SKIP() << "Exempt from GKI 1.0 test on TV devices";
+  }
   /* Skip for devices if the kernel version is not 5.4. */
   if (runtime_info->kernelVersion().dropMinor() !=
       android::vintf::Version{5, 4}) {
