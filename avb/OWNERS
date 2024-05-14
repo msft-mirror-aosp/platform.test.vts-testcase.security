@@ -5,4 +5,4 @@ per-file Android.bp = isaacmanjarres@google.com
 per-file kernel_version* = file:kernel/configs:/OWNERS
 per-file data/kernel_version* = file:kernel/configs:/OWNERS
 per-file gsi_validation_utils* = isaacmanjarres@google.com
-per-file vts_gki_compliance_test.c = isaacmanjarres@google.com
+per-file vts_gki_compliance_test.cpp = isaacmanjarres@google.com
