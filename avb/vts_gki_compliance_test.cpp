@@ -405,13 +405,6 @@ class GkiComplianceTest : public testing::Test {
       GTEST_SKIP() << "Exempt from GKI test on non-arm64 kernel devices";
     }
 
-    /* Skip for form factors that do not mandate GKI yet */
-    const static bool tv_device =
-        DeviceSupportsFeature("android.software.leanback");
-    if (tv_device) {
-      GTEST_SKIP() << "Exempt from GKI test on TV devices";
-    }
-
     GTEST_LOG_(INFO) << runtime_info->osName() << " "
                      << runtime_info->osRelease();
     GTEST_LOG_(INFO) << "Product first API level: " << product_first_api_level;
@@ -452,6 +445,22 @@ bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
       return true;
     }
   }
+  /*
+   * Skip for TV devices if the kernel version is not >= 5.15 or
+   * the device is launched before Android U.
+   */
+  if (DeviceSupportsFeature("android.software.leanback")) {
+    if (runtime_info->kernelVersion().dropMinor() <
+        android::vintf::Version{5, 15}) {
+      GTEST_LOG_(INFO) << "Exempt from GKI test on kernel version: "
+                       << runtime_info->kernelVersion();
+      return true;
+    }
+    if (product_first_api_level < __ANDROID_API_U__) {
+      GTEST_LOG_(INFO) << "Exempt from GKI test on pre-U launched TV devices";
+      return true;
+    }
+  }
   return false;
 }
 
@@ -462,6 +471,9 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
   }
   if (DeviceSupportsFeature("android.hardware.type.automotive")) {
     GTEST_SKIP() << "Skip GKI vbmeta check for automotive devices";
+  }
+  if (DeviceSupportsFeature("android.software.leanback")) {
+    GTEST_SKIP() << "Exempt from GKI 1.0 test on TV devices";
   }
   /* Skip for devices if the kernel version is not 5.4. */
   if (runtime_info->kernelVersion().dropMinor() !=
