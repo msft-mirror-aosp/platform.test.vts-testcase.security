@@ -369,25 +369,6 @@ void VerifyImageDescriptor(
   ASSERT_EQ(out_digest, expected_digest)
       << "Calculated digest does not match expected digest.";
 }
-
-// Returns true iff the device has the specified feature.
-bool DeviceSupportsFeature(const char *feature) {
-  bool device_supports_feature = false;
-  FILE *p = popen("pm list features", "re");
-  if (p) {
-    char *line = NULL;
-    size_t len = 0;
-    while (getline(&line, &len, p) > 0) {
-      if (strstr(line, feature)) {
-        device_supports_feature = true;
-        break;
-      }
-    }
-    pclose(p);
-  }
-  return device_supports_feature;
-}
-
 }  // namespace
 
 class GkiComplianceTest : public testing::Test {
@@ -433,7 +414,7 @@ bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
    * Skip for automotive devices if the kernel version is not >= 5.15 or
    * the device is launched before Android T.
    */
-  if (DeviceSupportsFeature("android.hardware.type.automotive")) {
+  if (IsAutomotiveDevice()) {
     if (runtime_info->kernelVersion().dropMinor() <
         android::vintf::Version{5, 15}) {
       GTEST_LOG_(INFO) << "Exempt from GKI test on kernel version: "
@@ -449,7 +430,7 @@ bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
    * Skip for TV devices if the kernel version is not >= 5.15 or
    * the device is launched before Android U.
    */
-  if (DeviceSupportsFeature("android.software.leanback")) {
+  if (IsTvDevice()) {
     if (runtime_info->kernelVersion().dropMinor() <
         android::vintf::Version{5, 15}) {
       GTEST_LOG_(INFO) << "Exempt from GKI test on kernel version: "
@@ -469,8 +450,11 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
     GTEST_SKIP() << "Exempt from GKI 1.0 test: product first API level ("
                  << product_first_api_level << ") < " << __ANDROID_API_R__;
   }
-  if (DeviceSupportsFeature("android.hardware.type.automotive")) {
+  if (IsAutomotiveDevice()) {
     GTEST_SKIP() << "Skip GKI vbmeta check for automotive devices";
+  }
+  if (IsTvDevice()) {
+    GTEST_SKIP() << "Exempt from GKI 1.0 test on TV devices";
   }
   /* Skip for devices if the kernel version is not 5.4. */
   if (runtime_info->kernelVersion().dropMinor() !=

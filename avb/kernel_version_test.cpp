@@ -285,8 +285,7 @@ struct ExpectTrueOnRelease : public std::stringstream {
 };
 
 bool IsGrf() {
-  return !android::base::GetProperty("ro.board.first_api_level", "").empty() ||
-         !android::base::GetProperty("ro.board.api_level", "").empty();
+  return !android::base::GetProperty("ro.board.first_api_level", "").empty();
 }
 
 // Returns true if the device has the specified feature.
@@ -358,21 +357,17 @@ TEST(KernelVersionTest, GrfDevicesMustUseLatestKernel) {
                     "SystemVendorTest.KernelCompatibility";
   }
 
-  // Use board API level, not vendor API level, to ignore
-  // ro.product.first_api_level. ro.vendor.api_level is considering
-  // the ro.product.api_level which could potentially yield a lower api_level
-  // than the ro.board.{first_,}api_level.
-  auto board_api_level = GetBoardApiLevel();
-  ASSERT_TRUE(board_api_level.has_value())
+  auto vendor_api_level = GetVendorApiLevel();
+  ASSERT_TRUE(vendor_api_level != 0)
       << "Unable to determine board API level on GRF devices";
 
-  if (*board_api_level <= __ANDROID_API_R__) {
+  if (vendor_api_level <= __ANDROID_API_R__) {
     GTEST_SKIP() << "[VSR-3.4.1-001] does not enforce latest kernel x.y for "
-                 << "board_api_level == " << *board_api_level << " <= R";
+                 << "vendor_api_level == " << vendor_api_level << " <= R";
   }
 
   auto corresponding_vintf_level =
-      android::vintf::testing::GetFcmVersionFromApiLevel(*board_api_level);
+      android::vintf::testing::GetFcmVersionFromApiLevel(vendor_api_level);
   ASSERT_THAT(corresponding_vintf_level, Ok());
 
   auto latest_min_lts =
@@ -387,7 +382,7 @@ TEST(KernelVersionTest, GrfDevicesMustUseLatestKernel) {
 
   ASSERT_GE(kernel_version, *latest_min_lts)
       << "[VSR-3.4.1-001] CHIPSETs that are on GRF and are frozen on API level "
-      << *board_api_level << " (corresponding to VINTF level "
+      << vendor_api_level << " (corresponding to VINTF level "
       << *corresponding_vintf_level << ") must use kernel version ("
       << *latest_min_lts << ")+, but kernel version is " << kernel_version;
 }

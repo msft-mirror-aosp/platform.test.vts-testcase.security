@@ -32,6 +32,10 @@ cc_defaults {
         "libfs_mgr",
         "liblog",
     ],
+    shared_libs: [
+        "libandroidfw",
+        "libutils",
+    ],
     header_libs: [
         "libstorage_literals_headers",
     ],
@@ -41,6 +45,7 @@ cc_defaults {
         ":s-gsi_avbpubkey",
         ":t-gsi_avbpubkey",
         ":qcar-gsi_avbpubkey",
+        ":gki-oem-2024_avbpubkey",
     ],
     cflags: [
         "-Wall",
@@ -93,4 +98,14 @@ cc_test {
     ],
 
     require_root: true,
+}
+
+filegroup {
+    name: "gsi_validation_utils_cpp",
+    srcs: ["gsi_validation_utils.cpp"],
+}
+
+filegroup {
+    name: "vts_gki_compliance_test_cpp",
+    srcs: ["vts_gki_compliance_test.cpp"],
 }

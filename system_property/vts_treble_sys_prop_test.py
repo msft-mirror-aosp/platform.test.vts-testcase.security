@@ -413,7 +413,8 @@ class VtsTrebleSysPropTest(unittest.TestCase):
         resource_name = os.path.basename(self._PUBLIC_PROPERTY_CONTEXTS_FILE_PATH)
         package_name = os.path.dirname(
             self._PUBLIC_PROPERTY_CONTEXTS_FILE_PATH).replace(os.path.sep, '.')
-        with resources.open_text(package_name, resource_name) as resource:
+        with resources.files(package_name).joinpath(resource_name).open('r') \
+            as resource:
             pub_property_dict = self._ParsePropertyDictFromPropertyContextsFile(
                 resource, True)
         for name in pub_property_dict:
@@ -453,8 +454,8 @@ class VtsTrebleSysPropTest(unittest.TestCase):
         Raises:
             IOError if the path does not exist or has invalid permission bits.
         """
-        cmd = "stat -c %%a %s" % path
-        out, err, return_code =  self.dut.Execute(cmd)
+        cmd = ["stat", "-c", "%a", path]
+        out, err, return_code =  self.dut.Execute(*cmd)
         logging.debug("%s: Shell command '%s' out: %s, err: %s, return_code: %s", path, cmd, out, err, return_code)
         # checks the exit code
         if return_code != 0:
