@@ -38,8 +38,15 @@ filegroup {
 }
 
 filegroup {
+    name: "gki-oem-2024_avbpubkey",
+    srcs: [
+        "gki-oem-2024.avbpubkey",
+    ],
+}
+
+filegroup {
     name: "kernel_version_matrix.textproto",
     srcs: [
-        "kernel_version_matrix.textproto"
+        "kernel_version_matrix.textproto",
     ],
 }
