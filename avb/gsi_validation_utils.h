@@ -102,3 +102,9 @@ uint32_t GetVendorApiLevel();
 std::optional<uint32_t> GetBoardApiLevel();
 
 bool IsReleasedAndroidVersion();
+
+bool IsAutomotiveDevice();
+
+bool IsTvDevice();
+
+bool IsGoDevice();
