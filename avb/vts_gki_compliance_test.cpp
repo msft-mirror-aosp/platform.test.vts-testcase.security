@@ -394,7 +394,7 @@ class GkiComplianceTest : public testing::Test {
     GTEST_LOG_(INFO) << "Product first API level: " << product_first_api_level;
   }
 
-  bool IsOgkiBuild();
+  bool IsOgkiBuild() const;
   bool ShouldSkipGkiComplianceV2();
 
   std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info;
@@ -404,7 +404,7 @@ class GkiComplianceTest : public testing::Test {
 const std::regex GkiComplianceTest::ogkiUnameRegex =
     std::regex("-abogki[0-9]+(-|$)");
 
-bool GkiComplianceTest::IsOgkiBuild() {
+bool GkiComplianceTest::IsOgkiBuild() const {
   /* Kernel version should at least be 6.1 for OGKI build. */
   if (runtime_info->kernelVersion().dropMinor() <
       android::vintf::Version{6, 1}) {
@@ -589,6 +589,15 @@ TEST_F(GkiComplianceTest, GkiComplianceV2_kernel) {
       << "Failed to load the 'generic_kernel' hash descriptor.";
   ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(boot_image->GetKernel(),
                                                 *generic_kernel_descriptor));
+}
+
+// Verify OGKI build is approved.
+TEST_F(GkiComplianceTest, OgkiCompliance) {
+  if (!IsOgkiBuild()) {
+    GTEST_SKIP() << "OGKI build not detected";
+  }
+
+  // TODO(b/342094847): Verify OGKI build is approved.
 }
 
 int main(int argc, char *argv[]) {
