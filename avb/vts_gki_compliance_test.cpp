@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <regex>
 #include <vector>
 
 #include <android-base/file.h>
@@ -369,28 +370,11 @@ void VerifyImageDescriptor(
   ASSERT_EQ(out_digest, expected_digest)
       << "Calculated digest does not match expected digest.";
 }
-
-// Returns true iff the device has the specified feature.
-bool DeviceSupportsFeature(const char *feature) {
-  bool device_supports_feature = false;
-  FILE *p = popen("pm list features", "re");
-  if (p) {
-    char *line = NULL;
-    size_t len = 0;
-    while (getline(&line, &len, p) > 0) {
-      if (strstr(line, feature)) {
-        device_supports_feature = true;
-        break;
-      }
-    }
-    pclose(p);
-  }
-  return device_supports_feature;
-}
-
 }  // namespace
 
 class GkiComplianceTest : public testing::Test {
+  static const std::regex ogkiUnameRegex;
+
  protected:
   void SetUp() override {
     // Fetch device runtime information.
@@ -405,23 +389,30 @@ class GkiComplianceTest : public testing::Test {
       GTEST_SKIP() << "Exempt from GKI test on non-arm64 kernel devices";
     }
 
-    /* Skip for form factors that do not mandate GKI yet */
-    const static bool tv_device =
-        DeviceSupportsFeature("android.software.leanback");
-    if (tv_device) {
-      GTEST_SKIP() << "Exempt from GKI test on TV devices";
-    }
-
     GTEST_LOG_(INFO) << runtime_info->osName() << " "
                      << runtime_info->osRelease();
     GTEST_LOG_(INFO) << "Product first API level: " << product_first_api_level;
   }
 
+  bool IsOgkiBuild() const;
   bool ShouldSkipGkiComplianceV2();
 
   std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info;
   int product_first_api_level;
 };
+
+const std::regex GkiComplianceTest::ogkiUnameRegex =
+    std::regex("-abogki[0-9]+(-|$)");
+
+bool GkiComplianceTest::IsOgkiBuild() const {
+  /* Kernel version should at least be 6.1 for OGKI build. */
+  if (runtime_info->kernelVersion().dropMinor() <
+      android::vintf::Version{6, 1}) {
+    return false;
+  }
+
+  return std::regex_search(runtime_info->osRelease(), ogkiUnameRegex);
+}
 
 bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
   /* Skip for devices if the kernel version is not >= 5.10. */
@@ -436,11 +427,16 @@ bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
     GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on pre-S launched devices";
     return true;
   }
+  /* Skip for OGKI kernel builds. */
+  if (IsOgkiBuild()) {
+    GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on OGKI kernel";
+    return true;
+  }
   /*
    * Skip for automotive devices if the kernel version is not >= 5.15 or
    * the device is launched before Android T.
    */
-  if (DeviceSupportsFeature("android.hardware.type.automotive")) {
+  if (IsAutomotiveDevice()) {
     if (runtime_info->kernelVersion().dropMinor() <
         android::vintf::Version{5, 15}) {
       GTEST_LOG_(INFO) << "Exempt from GKI test on kernel version: "
@@ -452,6 +448,22 @@ bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
       return true;
     }
   }
+  /*
+   * Skip for TV devices if the kernel version is not >= 5.15 or
+   * the device is launched before Android U.
+   */
+  if (IsTvDevice()) {
+    if (runtime_info->kernelVersion().dropMinor() <
+        android::vintf::Version{5, 15}) {
+      GTEST_LOG_(INFO) << "Exempt from GKI test on kernel version: "
+                       << runtime_info->kernelVersion();
+      return true;
+    }
+    if (product_first_api_level < __ANDROID_API_U__) {
+      GTEST_LOG_(INFO) << "Exempt from GKI test on pre-U launched TV devices";
+      return true;
+    }
+  }
   return false;
 }
 
@@ -460,8 +472,11 @@ TEST_F(GkiComplianceTest, GkiComplianceV1) {
     GTEST_SKIP() << "Exempt from GKI 1.0 test: product first API level ("
                  << product_first_api_level << ") < " << __ANDROID_API_R__;
   }
-  if (DeviceSupportsFeature("android.hardware.type.automotive")) {
+  if (IsAutomotiveDevice()) {
     GTEST_SKIP() << "Skip GKI vbmeta check for automotive devices";
+  }
+  if (IsTvDevice()) {
+    GTEST_SKIP() << "Exempt from GKI 1.0 test on TV devices";
   }
   /* Skip for devices if the kernel version is not 5.4. */
   if (runtime_info->kernelVersion().dropMinor() !=
@@ -574,6 +589,15 @@ TEST_F(GkiComplianceTest, GkiComplianceV2_kernel) {
       << "Failed to load the 'generic_kernel' hash descriptor.";
   ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(boot_image->GetKernel(),
                                                 *generic_kernel_descriptor));
+}
+
+// Verify OGKI build is approved.
+TEST_F(GkiComplianceTest, OgkiCompliance) {
+  if (!IsOgkiBuild()) {
+    GTEST_SKIP() << "OGKI build not detected";
+  }
+
+  // TODO(b/342094847): Verify OGKI build is approved.
 }
 
 int main(int argc, char *argv[]) {
