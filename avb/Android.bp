@@ -76,12 +76,10 @@ cc_test {
         "vts_gki_compliance_test.cpp",
         "kernel_version_test.cpp",
         "kernel_version_matrix.proto",
-        "ogki_builds_utils.cpp",
     ],
     static_libs: [
         "libgmock",
         "libkver",
-        "libtinyxml2",
         "libvintf",
         "libvts_vintf_test_common",
     ],
@@ -109,8 +107,5 @@ filegroup {
 
 filegroup {
     name: "vts_gki_compliance_test_cpp",
-    srcs: [
-        "vts_gki_compliance_test.cpp",
-        "ogki_builds_utils.cpp",
-    ],
+    srcs: ["vts_gki_compliance_test.cpp"],
 }
