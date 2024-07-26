@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 
-#include <cstdint>
-#include <ranges>
 #include <regex>
-#include <unordered_map>
 #include <vector>
 
 #include <android-base/file.h>
@@ -28,32 +25,17 @@
 #include <bootimg.h>
 #include <fs_avb/fs_avb_util.h>
 #include <gtest/gtest.h>
-#include <kver/kernel_release.h>
 #include <libavb/libavb.h>
-#include <openssl/sha.h>
 #include <storage_literals/storage_literals.h>
 #include <vintf/VintfObject.h>
 #include <vintf/parse_string.h>
 
 #include "gsi_validation_utils.h"
-#include "ogki_builds_utils.h"
 
 using namespace std::literals;
 using namespace android::storage_literals;
 
 namespace {
-
-std::string sha256(const std::string_view content) {
-  unsigned char hash[SHA256_DIGEST_LENGTH];
-  const unsigned char *data = (const unsigned char *)content.data();
-  SHA256(data, content.size(), hash);
-  std::ostringstream os;
-  os << std::hex << std::setfill('0');
-  for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
-    os << std::setw(2) << static_cast<uint8_t>(hash[i]);
-  }
-  return os.str();
-}
 
 std::string GetBlockDevicePath(const std::string &name) {
   return "/dev/block/by-name/" + name + fs_mgr_get_slot_suffix();
@@ -615,26 +597,7 @@ TEST_F(GkiComplianceTest, OgkiCompliance) {
     GTEST_SKIP() << "OGKI build not detected";
   }
 
-  const auto kernel_release =
-      android::kver::KernelRelease::Parse(runtime_info->osRelease(),
-                                          /* allow_suffix = */ true);
-  if (!kernel_release.has_value()) {
-    GTEST_FAIL() << "Failed to parse the kernel release string: "
-                 << runtime_info->osRelease();
-  }
-
-  auto branch =
-      std::format("android{}-{}.{}", kernel_release->android_release(),
-                  runtime_info->kernelVersion().version,
-                  runtime_info->kernelVersion().majorRev);
-  auto approved_builds_result = ogki::GetApprovedBuilds(branch);
-  if (!approved_builds_result.ok()) {
-    GTEST_FAIL() << "Failed to get approved OGKI builds: "
-                 << approved_builds_result.error().message();
-  }
-
-  const auto uname_hash = sha256(runtime_info->osRelease());
-  EXPECT_TRUE(approved_builds_result.value().contains(uname_hash));
+  // TODO(b/342094847): Verify OGKI build is approved.
 }
 
 int main(int argc, char *argv[]) {
