@@ -423,9 +423,10 @@ const std::regex GkiComplianceTest::ogkiUnameRegex =
     std::regex("-abogki[0-9]+(-|$)");
 
 bool GkiComplianceTest::IsOgkiBuild() const {
-  /* Kernel version should at least be 6.1 for OGKI build. */
-  if (runtime_info->kernelVersion().dropMinor() <
-      android::vintf::Version{6, 1}) {
+  /* Android release version should at least be android14 for OGKI build. */
+  const auto kernel_release = android::kver::KernelRelease::Parse(
+      runtime_info->osRelease(), /* allow_suffix = */ true);
+  if (!kernel_release.has_value() || kernel_release->android_release() < 14) {
     return false;
   }
 
