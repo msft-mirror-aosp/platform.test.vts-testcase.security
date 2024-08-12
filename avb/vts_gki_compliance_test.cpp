@@ -50,7 +50,7 @@ std::string sha256(const std::string_view content) {
   std::ostringstream os;
   os << std::hex << std::setfill('0');
   for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
-    os << std::setw(2) << static_cast<uint8_t>(hash[i]);
+    os << std::setw(2) << static_cast<unsigned int>(hash[i]);
   }
   return os.str();
 }
