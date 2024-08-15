@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+#include <cstdint>
+#include <ranges>
+#include <regex>
+#include <unordered_map>
 #include <vector>
 
 #include <android-base/file.h>
@@ -24,17 +28,32 @@
 #include <bootimg.h>
 #include <fs_avb/fs_avb_util.h>
 #include <gtest/gtest.h>
+#include <kver/kernel_release.h>
 #include <libavb/libavb.h>
+#include <openssl/sha.h>
 #include <storage_literals/storage_literals.h>
 #include <vintf/VintfObject.h>
 #include <vintf/parse_string.h>
 
 #include "gsi_validation_utils.h"
+#include "ogki_builds_utils.h"
 
 using namespace std::literals;
 using namespace android::storage_literals;
 
 namespace {
+
+std::string sha256(const std::string_view content) {
+  unsigned char hash[SHA256_DIGEST_LENGTH];
+  const unsigned char *data = (const unsigned char *)content.data();
+  SHA256(data, content.size(), hash);
+  std::ostringstream os;
+  os << std::hex << std::setfill('0');
+  for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+    os << std::setw(2) << static_cast<unsigned int>(hash[i]);
+  }
+  return os.str();
+}
 
 std::string GetBlockDevicePath(const std::string &name) {
   return "/dev/block/by-name/" + name + fs_mgr_get_slot_suffix();
@@ -372,6 +391,8 @@ void VerifyImageDescriptor(
 }  // namespace
 
 class GkiComplianceTest : public testing::Test {
+  static const std::regex ogkiUnameRegex;
+
  protected:
   void SetUp() override {
     // Fetch device runtime information.
@@ -391,11 +412,26 @@ class GkiComplianceTest : public testing::Test {
     GTEST_LOG_(INFO) << "Product first API level: " << product_first_api_level;
   }
 
+  bool IsOgkiBuild() const;
   bool ShouldSkipGkiComplianceV2();
 
   std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info;
   int product_first_api_level;
 };
+
+const std::regex GkiComplianceTest::ogkiUnameRegex =
+    std::regex("-abogki[0-9]+(-|$)");
+
+bool GkiComplianceTest::IsOgkiBuild() const {
+  /* Android release version should at least be android14 for OGKI build. */
+  const auto kernel_release = android::kver::KernelRelease::Parse(
+      runtime_info->osRelease(), /* allow_suffix = */ true);
+  if (!kernel_release.has_value() || kernel_release->android_release() < 14) {
+    return false;
+  }
+
+  return std::regex_search(runtime_info->osRelease(), ogkiUnameRegex);
+}
 
 bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
   /* Skip for devices if the kernel version is not >= 5.10. */
@@ -408,6 +444,11 @@ bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
   /* Skip for devices launched before Android S. */
   if (product_first_api_level < __ANDROID_API_S__) {
     GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on pre-S launched devices";
+    return true;
+  }
+  /* Skip for OGKI kernel builds. */
+  if (IsOgkiBuild()) {
+    GTEST_LOG_(INFO) << "Exempt from GKI 2.0 test on OGKI kernel";
     return true;
   }
   /*
@@ -567,6 +608,32 @@ TEST_F(GkiComplianceTest, GkiComplianceV2_kernel) {
       << "Failed to load the 'generic_kernel' hash descriptor.";
   ASSERT_NO_FATAL_FAILURE(VerifyImageDescriptor(boot_image->GetKernel(),
                                                 *generic_kernel_descriptor));
+}
+
+// Verify OGKI build is approved.
+TEST_F(GkiComplianceTest, OgkiCompliance) {
+  if (!IsOgkiBuild()) {
+    GTEST_SKIP() << "OGKI build not detected";
+  }
+
+  const auto kernel_release =
+      android::kver::KernelRelease::Parse(runtime_info->osRelease(),
+                                          /* allow_suffix = */ true);
+  ASSERT_TRUE(kernel_release.has_value())
+      << "Failed to parse the kernel release string: "
+      << runtime_info->osRelease();
+
+  auto branch =
+      std::format("android{}-{}.{}", kernel_release->android_release(),
+                  runtime_info->kernelVersion().version,
+                  runtime_info->kernelVersion().majorRev);
+  auto approved_builds_result = ogki::GetApprovedBuilds(branch);
+  ASSERT_TRUE(approved_builds_result.ok())
+      << "Failed to get approved OGKI builds: "
+      << approved_builds_result.error().message();
+
+  const auto uname_hash = sha256(runtime_info->osRelease());
+  EXPECT_TRUE(approved_builds_result.value().contains(uname_hash));
 }
 
 int main(int argc, char *argv[]) {
