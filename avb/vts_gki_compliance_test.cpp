@@ -50,7 +50,7 @@ std::string sha256(const std::string_view content) {
   std::ostringstream os;
   os << std::hex << std::setfill('0');
   for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
-    os << std::setw(2) << static_cast<uint8_t>(hash[i]);
+    os << std::setw(2) << static_cast<unsigned int>(hash[i]);
   }
   return os.str();
 }
@@ -619,20 +619,18 @@ TEST_F(GkiComplianceTest, OgkiCompliance) {
   const auto kernel_release =
       android::kver::KernelRelease::Parse(runtime_info->osRelease(),
                                           /* allow_suffix = */ true);
-  if (!kernel_release.has_value()) {
-    GTEST_FAIL() << "Failed to parse the kernel release string: "
-                 << runtime_info->osRelease();
-  }
+  ASSERT_TRUE(kernel_release.has_value())
+      << "Failed to parse the kernel release string: "
+      << runtime_info->osRelease();
 
   auto branch =
       std::format("android{}-{}.{}", kernel_release->android_release(),
                   runtime_info->kernelVersion().version,
                   runtime_info->kernelVersion().majorRev);
   auto approved_builds_result = ogki::GetApprovedBuilds(branch);
-  if (!approved_builds_result.ok()) {
-    GTEST_FAIL() << "Failed to get approved OGKI builds: "
-                 << approved_builds_result.error().message();
-  }
+  ASSERT_TRUE(approved_builds_result.ok())
+      << "Failed to get approved OGKI builds: "
+      << approved_builds_result.error().message();
 
   const auto uname_hash = sha256(runtime_info->osRelease());
   EXPECT_TRUE(approved_builds_result.value().contains(uname_hash));
