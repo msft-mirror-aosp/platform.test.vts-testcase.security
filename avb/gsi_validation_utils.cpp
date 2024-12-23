@@ -249,8 +249,13 @@ bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
 
   const std::string exec_dir = android::base::GetExecutableDirectory();
   std::vector<std::string> allowed_key_names = {
-      "q-gsi.avbpubkey", "r-gsi.avbpubkey",    "s-gsi.avbpubkey",
-      "t-gsi.avbpubkey", "qcar-gsi.avbpubkey",
+      "q-gsi.avbpubkey",      "r-gsi.avbpubkey",      "s-gsi.avbpubkey",
+      "t-gsi.avbpubkey",      "qcar-gsi.avbpubkey",   "ogki-key0.avbpubkey",
+      "ogki-key1.avbpubkey",  "ogki-key2.avbpubkey",  "ogki-key3.avbpubkey",
+      "ogki-key4.avbpubkey",  "ogki-key5.avbpubkey",  "ogki-key6.avbpubkey",
+      "ogki-key7.avbpubkey",  "ogki-key8.avbpubkey",  "ogki-key9.avbpubkey",
+      "ogki-key10.avbpubkey", "ogki-key11.avbpubkey", "ogki-key12.avbpubkey",
+      "ogki-key13.avbpubkey",
   };
   std::vector<std::string> allowed_oem_key_names = {
       "gki-oem-2024.avbpubkey",
