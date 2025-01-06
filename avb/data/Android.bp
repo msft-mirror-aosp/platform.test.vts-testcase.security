@@ -49,6 +49,7 @@ filegroup {
     srcs: [
         "ogki-pubkeys/*.avbpubkey",
     ],
+    path: "ogki-pubkeys",
 }
 
 filegroup {
