@@ -45,6 +45,14 @@ filegroup {
 }
 
 filegroup {
+    name: "ogki_avbpubkeys",
+    srcs: [
+        "ogki-pubkeys/*.avbpubkey",
+    ],
+    path: "ogki-pubkeys",
+}
+
+filegroup {
     name: "kernel_version_matrix.textproto",
     srcs: [
         "kernel_version_matrix.textproto",
