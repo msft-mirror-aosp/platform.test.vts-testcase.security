@@ -58,3 +58,10 @@ filegroup {
         "kernel_version_matrix.textproto",
     ],
 }
+
+filegroup {
+    name: "kernel-modules.xml",
+    srcs: [
+        "kernel-modules.xml",
+    ],
+}
