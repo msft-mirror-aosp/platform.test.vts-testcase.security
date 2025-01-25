@@ -104,6 +104,36 @@ cc_test {
     require_root: true,
 }
 
+cc_test {
+    name: "vts_built_with_ddk_test",
+    require_root: true,
+    test_options: {
+        vsr_min_shipping_api_level: 202504,
+    },
+    test_suites: [
+        "vts",
+    ],
+    srcs: [
+        "vts_built_with_ddk_test.cpp",
+    ],
+    data: [
+        ":kernel-modules.xml",
+    ],
+    defaults: [
+        "libvintf_static_user_defaults",
+    ],
+    static_libs: [
+        "libcrypto_static",
+        "libelf64",
+        "libtinyxml2",
+        "libvintf",
+    ],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+}
+
 filegroup {
     name: "gsi_validation_utils_cpp",
     srcs: ["gsi_validation_utils.cpp"],
