@@ -55,14 +55,6 @@ constexpr std::string_view kOptionalKernelModulesConfigPath =
 class ModinfoTags {
  public:
   void ParseData(const std::vector<char>& data) {
-    // Make sure this is running with a null terminated buffer.
-    if (data.back() != '\0') {
-      std::vector<char> data_copy(data);
-      data_copy.push_back('\0');
-      ParseData(data_copy);
-      return;
-    }
-
     size_t offset = 0;
     while (offset < data.size()) {
       std::string_view chunk(data.data() + offset);
@@ -71,8 +63,8 @@ class ModinfoTags {
       if (chunk.empty()) continue;
       const auto delimiter = chunk.find('=');
       // Malformed chunk, just ignore it.
-      if (delimiter == std::string::npos) continue;
-      tags_[chunk.substr(0, delimiter)].emplace_back(
+      if (delimiter == std::string_view::npos) continue;
+      tags_[std::string(chunk.substr(0, delimiter))].emplace_back(
           chunk.substr(delimiter + 1));
     }
   }
@@ -87,7 +79,7 @@ class ModinfoTags {
   }
 
  private:
-  std::unordered_map<std::string_view, std::vector<std::string>> tags_;
+  std::unordered_map<std::string, std::vector<std::string>> tags_;
 };
 
 android::base::Result<void> AddModulesFromPath(
@@ -218,9 +210,13 @@ TEST_F(BuiltWithDdkTest, SystemModules) {
     }
     ModinfoTags modinfo_tags;
     for (int i = 0; i < elf.sections.size(); i++) {
-      android::elf64::Elf64_Sc section = elf.sections[i];
+      android::elf64::Elf64_Sc &section = elf.sections[i];
       // Skip irrelevant sections
       if (section.name != ".modinfo") continue;
+      // Ensure the buffer is zero terminated.
+      if (section.data.back() != '\0') {
+        section.data.push_back('\0');
+      }
       modinfo_tags.ParseData(section.data);
       break;
     }
