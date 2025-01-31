@@ -255,7 +255,8 @@ bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
       "ogki-key4.avbpubkey",  "ogki-key5.avbpubkey",  "ogki-key6.avbpubkey",
       "ogki-key7.avbpubkey",  "ogki-key8.avbpubkey",  "ogki-key9.avbpubkey",
       "ogki-key10.avbpubkey", "ogki-key11.avbpubkey", "ogki-key12.avbpubkey",
-      "ogki-key13.avbpubkey",
+      "ogki-key13.avbpubkey", "ogki-key14.avbpubkey", "ogki-key15.avbpubkey",
+      "ogki-key16.avbpubkey", "ogki-key17.avbpubkey",
   };
   std::vector<std::string> allowed_oem_key_names = {
       "gki-oem-2024.avbpubkey",
