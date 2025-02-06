@@ -49,11 +49,19 @@ filegroup {
     srcs: [
         "ogki-pubkeys/*.avbpubkey",
     ],
+    path: "ogki-pubkeys",
 }
 
 filegroup {
     name: "kernel_version_matrix.textproto",
     srcs: [
         "kernel_version_matrix.textproto",
+    ],
+}
+
+filegroup {
+    name: "kernel-modules.xml",
+    srcs: [
+        "kernel-modules.xml",
     ],
 }
