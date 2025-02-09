@@ -106,6 +106,10 @@ release_requirements: [
         "android15-6.6"
       ]
       launch: [
+        "android14-6.1",
+        "android15-6.6"
+      ]
+      launch_grf: [
         "android12-5.10",
         "android13-5.10",
         "android13-5.15",
@@ -113,10 +117,13 @@ release_requirements: [
         "android14-6.1",
         "android15-6.6"
       ]
-      launch_grf: [
-        # -stable are dropped from non-GKI kernel release formats because the kernel branch
-        # cannot be looked up anywhere.
-        "android-4.19", # android-4.19-stable
+    }
+  },
+  {
+    # Android 16
+    key: 36
+    value {
+      upgrade: [
         "android11-5.4",
         "android12-5.4",
         "android12-5.10",
@@ -124,7 +131,19 @@ release_requirements: [
         "android13-5.15",
         "android14-5.15",
         "android14-6.1",
-        "android15-6.6"
+        "android15-6.6",
+        "android16-6.12"
+      ]
+      launch: [
+        "android15-6.6",
+        "android16-6.12"
+      ]
+      launch_grf: [
+        "android13-5.15",
+        "android14-5.15",
+        "android14-6.1",
+        "android15-6.6",
+        "android16-6.12"
       ]
     }
   }
