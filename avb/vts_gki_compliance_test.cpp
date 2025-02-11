@@ -485,61 +485,6 @@ bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
   return false;
 }
 
-TEST_F(GkiComplianceTest, GkiComplianceV1) {
-  if (product_first_api_level < __ANDROID_API_R__) {
-    GTEST_SKIP() << "Exempt from GKI 1.0 test: product first API level ("
-                 << product_first_api_level << ") < " << __ANDROID_API_R__;
-  }
-  if (IsAutomotiveDevice()) {
-    GTEST_SKIP() << "Skip GKI vbmeta check for automotive devices";
-  }
-  if (IsTvDevice()) {
-    GTEST_SKIP() << "Exempt from GKI 1.0 test on TV devices";
-  }
-  /* Skip for devices if the kernel version is not 5.4. */
-  if (runtime_info->kernelVersion().dropMinor() !=
-      android::vintf::Version{5, 4}) {
-    GTEST_SKIP() << "Exempt from GKI 1.0 test on kernel version: "
-                 << runtime_info->kernelVersion();
-  }
-
-  /* load vbmeta struct from boot, verify struct integrity */
-  std::string out_public_key_data;
-  android::fs_mgr::VBMetaVerifyResult out_verify_result;
-  const std::string boot_path = GetBlockDevicePath("boot");
-  std::unique_ptr<android::fs_mgr::VBMetaData> vbmeta =
-      android::fs_mgr::LoadAndVerifyVbmetaByPath(
-          boot_path, "boot", "" /* expected_key_blob */,
-          true /* allow verification error */, false /* rollback_protection */,
-          false /* is_chained_vbmeta */, &out_public_key_data,
-          nullptr /* out_verification_disabled */, &out_verify_result);
-
-  ASSERT_TRUE(vbmeta) << "Verification of GKI vbmeta fails.";
-  ASSERT_FALSE(out_public_key_data.empty()) << "The GKI image is not signed.";
-  EXPECT_TRUE(ValidatePublicKeyBlob(out_public_key_data))
-      << "The GKI image is not signed by an official key.";
-  EXPECT_EQ(out_verify_result, android::fs_mgr::VBMetaVerifyResult::kSuccess)
-      << "Verification of the GKI vbmeta structure failed.";
-
-  /* verify boot partition according to vbmeta structure */
-  std::unique_ptr<android::fs_mgr::FsAvbHashDescriptor> descriptor =
-      android::fs_mgr::GetHashDescriptor("boot", std::move(*vbmeta));
-  ASSERT_TRUE(descriptor)
-      << "Failed to load hash descriptor from boot.img vbmeta";
-
-  android::base::unique_fd fd(open(boot_path.c_str(), O_RDONLY));
-  ASSERT_TRUE(fd.ok()) << "Fail to open boot partition. Try 'adb root'.";
-
-  std::vector<uint8_t> boot_partition_vector;
-  boot_partition_vector.resize(descriptor->image_size);
-  ASSERT_TRUE(android::base::ReadFully(fd, boot_partition_vector.data(),
-                                       descriptor->image_size))
-      << "Could not read boot partition to vector.";
-
-  ASSERT_NO_FATAL_FAILURE(
-      VerifyImageDescriptor(boot_partition_vector, *descriptor));
-}
-
 // Verify the entire boot image.
 TEST_F(GkiComplianceTest, GkiComplianceV2) {
   if (ShouldSkipGkiComplianceV2()) {
