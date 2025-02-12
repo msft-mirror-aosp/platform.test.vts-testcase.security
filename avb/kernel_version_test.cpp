@@ -261,6 +261,15 @@ bool KernelVersionIsSupported(
     error_stream << "  " << req << ",\n";
   }
   error_stream << "].";
+
+  if (actual.kernel_version() == android::vintf::Version{5, 4} &&
+      !actual.android_release().has_value()) {
+    GTEST_LOG_(INFO)
+        << error_stream.str()
+        << "\nGKI V1 testing is no longer required, skipping (b/390033463).";
+    return true;
+  }
+
   *error = error_stream.str();
   return false;
 }
