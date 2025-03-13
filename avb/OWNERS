@@ -2,6 +2,7 @@
 bowgotsai@google.com
 
 per-file Android.bp = isaacmanjarres@google.com
+per-file Android.bp = file:kernel/build:/OWNERS
 per-file kernel_version* = file:kernel/configs:/OWNERS
 per-file data/kernel_version* = file:kernel/configs:/OWNERS
 per-file data/kernel-modules.xml = file:kernel/build:/OWNERS
