@@ -166,12 +166,15 @@ class BuiltWithDdkTest : public testing::Test {
                    << kernel_version.version << " " << kernel_version.majorRev;
     }
 
+    slot_suffix_ = android::base::GetProperty("ro.boot.slot_suffix", "");
+
     // Get the information of ACK modules from the test data and from the system
     // if available.
     ack_modules_ = GetAckModules();
     ASSERT_RESULT_OK(ack_modules_) << "Unable to read list of ACK modules.";
   }
   android::base::Result<std::unordered_set<std::string>> ack_modules_;
+  std::string slot_suffix_;
 };
 
 std::string ModuleHash(const std::string& name, const std::string& author,
@@ -249,33 +252,54 @@ TEST_F(BuiltWithDdkTest, SystemModules) {
   }
 }
 
+void InspectExtractedRamdisk(
+    const std::filesystem::path& extracted_ramdisk_path,
+    const std::unordered_set<std::string>& ack_modules) {
+  std::vector<std::filesystem::path> kernel_module_paths;
+
+  for (auto& path_entry :
+       std::filesystem::recursive_directory_iterator(extracted_ramdisk_path)) {
+    if (path_entry.path().extension() == ".ko") {
+      kernel_module_paths.push_back(path_entry);
+    }
+  }
+
+  // Run the inspection for each module found.
+  for (const auto& module_path : kernel_module_paths) {
+    EXPECT_RESULT_OK(InspectModule(ack_modules, module_path));
+  }
+}
+
 // @VsrTest = 3.4.2
 TEST_F(BuiltWithDdkTest, BootModules) {
-  const std::string slot_suffix =
-      android::base::GetProperty("ro.boot.slot_suffix", "");
-  const std::string boot_path = "/dev/block/by-name/init_boot" + slot_suffix;
-  // TODO: b/374932907 -- Check vendor_boot & vendor_kernel_boot as well.
-
+  const std::string boot_path = "/dev/block/by-name/init_boot" + slot_suffix_;
   if (!std::filesystem::exists(boot_path)) {
     GTEST_SKIP() << "Boot path " << boot_path << " does not exist.";
   }
   const auto extracted_ramdisk = android::ExtractRamdiskToDirectory(boot_path);
   ASSERT_TRUE(extracted_ramdisk.ok())
       << "Failed to extract ramdisk: " << extracted_ramdisk.error();
+  InspectExtractedRamdisk((*extracted_ramdisk)->path, ack_modules_.value());
+}
 
-  std::vector<std::filesystem::path> device_module_paths;
-  const std::filesystem::path extracted_ramdisk_path(
-      (*extracted_ramdisk)->path);
-  for (auto& path_entry :
-       std::filesystem::recursive_directory_iterator(extracted_ramdisk_path)) {
-    if (path_entry.path().extension() == ".ko") {
-      device_module_paths.push_back(path_entry);
-    }
+// TODO: b/374932907 -- Verify if this is enough for vendor_kernel_boot as well.
+// @VsrTest = 3.4.2
+TEST_F(BuiltWithDdkTest, VendorBootModules) {
+  const std::string vendor_boot_path =
+      "/dev/block/by-name/vendor_boot" + slot_suffix_;
+
+  if (!std::filesystem::exists(vendor_boot_path)) {
+    GTEST_SKIP() << "Boot path " << vendor_boot_path << " does not exist.";
   }
-  // Run the inspection for each module found.
-  for (const auto& module_path : device_module_paths) {
-    EXPECT_RESULT_OK(InspectModule(ack_modules_.value(), module_path));
-  }
+  const auto extracted_vendor_ramdisk =
+      android::ExtractVendorRamdiskToDirectory(vendor_boot_path);
+
+  ASSERT_TRUE(extracted_vendor_ramdisk.ok())
+      << "Failed to extract vendor_ramdisk: "
+      << extracted_vendor_ramdisk.error();
+
+  InspectExtractedRamdisk((*extracted_vendor_ramdisk)->path,
+                          ack_modules_.value());
 }
 
 }  // namespace
