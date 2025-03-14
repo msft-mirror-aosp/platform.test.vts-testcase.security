@@ -36,6 +36,8 @@
 #include <tinyxml2.h>
 #include <vintf/VintfObject.h>
 
+#include "ramdisk_utils.h"
+
 namespace android {
 namespace {
 
@@ -247,7 +249,34 @@ TEST_F(BuiltWithDdkTest, SystemModules) {
   }
 }
 
-// TODO: b/374932907 -- For V2 of this test, also include ramdisk files.
+// @VsrTest = 3.4.2
+TEST_F(BuiltWithDdkTest, BootModules) {
+  const std::string slot_suffix =
+      android::base::GetProperty("ro.boot.slot_suffix", "");
+  const std::string boot_path = "/dev/block/by-name/init_boot" + slot_suffix;
+  // TODO: b/374932907 -- Check vendor_boot & vendor_kernel_boot as well.
+
+  if (!std::filesystem::exists(boot_path)) {
+    GTEST_SKIP() << "Boot path " << boot_path << " does not exist.";
+  }
+  const auto extracted_ramdisk = android::ExtractRamdiskToDirectory(boot_path);
+  ASSERT_TRUE(extracted_ramdisk.ok())
+      << "Failed to extract ramdisk: " << extracted_ramdisk.error();
+
+  std::vector<std::filesystem::path> device_module_paths;
+  const std::filesystem::path extracted_ramdisk_path(
+      (*extracted_ramdisk)->path);
+  for (auto& path_entry :
+       std::filesystem::recursive_directory_iterator(extracted_ramdisk_path)) {
+    if (path_entry.path().extension() == ".ko") {
+      device_module_paths.push_back(path_entry);
+    }
+  }
+  // Run the inspection for each module found.
+  for (const auto& module_path : device_module_paths) {
+    EXPECT_RESULT_OK(InspectModule(ack_modules_.value(), module_path));
+  }
+}
 
 }  // namespace
 }  // namespace android
