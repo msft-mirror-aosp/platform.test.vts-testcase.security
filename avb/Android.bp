@@ -125,8 +125,10 @@ cc_test {
     static_libs: [
         "libcrypto_static",
         "libelf64",
+        "liblz4",
         "libtinyxml2",
         "libvintf",
+        "vts_boot_test_utils_lib",
     ],
     cflags: [
         "-Wall",
