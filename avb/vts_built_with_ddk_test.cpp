@@ -36,18 +36,10 @@
 #include <tinyxml2.h>
 #include <vintf/VintfObject.h>
 
+#include "ramdisk_utils.h"
+
 namespace android {
 namespace {
-
-class BuiltWithDdkTest : public testing::Test {
- protected:
-  void SetUp() override {
-    // Fetch device runtime information.
-    runtime_info_ = android::vintf::VintfObject::GetRuntimeInfo();
-    ASSERT_NE(nullptr, runtime_info_);
-  }
-  std::shared_ptr<const android::vintf::RuntimeInfo> runtime_info_;
-};
 
 constexpr std::string_view kOptionalKernelModulesConfigPath =
     "/system/etc/kernel/kernel-modules.xml";
@@ -151,13 +143,47 @@ std::string sha256(const std::string& content) {
   return os.str();
 }
 
+class BuiltWithDdkTest : public testing::Test {
+ protected:
+  void SetUp() override {
+    // Fetch device runtime information.
+    const auto& runtime_info = android::vintf::VintfObject::GetRuntimeInfo();
+    ASSERT_NE(nullptr, runtime_info);
+
+    constexpr uint64_t kMinAndroidRelease = 16;
+    const auto& kernel_version = runtime_info->kernelVersion();
+    const auto& kernel_release = android::kver::KernelRelease::Parse(
+        runtime_info->osRelease(), /* allow_suffix = */ true);
+
+    if (!kernel_release.has_value() ||
+        (kernel_release->android_release() < kMinAndroidRelease)) {
+      GTEST_SKIP() << "The test only applies to android" << kMinAndroidRelease
+                   << " or later kernels.";
+    }
+    if (runtime_info->kernelVersion().dropMinor() <
+        android::vintf::Version{6, 12}) {
+      GTEST_SKIP() << "Exempt from built with DDK test. Kernel: "
+                   << kernel_version.version << " " << kernel_version.majorRev;
+    }
+
+    slot_suffix_ = android::base::GetProperty("ro.boot.slot_suffix", "");
+
+    // Get the information of ACK modules from the test data and from the system
+    // if available.
+    ack_modules_ = GetAckModules();
+    ASSERT_RESULT_OK(ack_modules_) << "Unable to read list of ACK modules.";
+  }
+  android::base::Result<std::unordered_set<std::string>> ack_modules_;
+  std::string slot_suffix_;
+};
+
 std::string ModuleHash(const std::string& name, const std::string& author,
                        const std::string& license) {
   return sha256(name + author + license);
 }
 
 android::base::Result<void> AddModulesFromPartition(
-    std::vector<std::string>& modules, const std::string& partition) {
+    std::vector<std::filesystem::path>& modules, const std::string& partition) {
   int modules_found = 0;
   if (!std::filesystem::is_directory(partition)) {
     return android::base::Error() << "Unable to analyze path " << partition;
@@ -165,7 +191,7 @@ android::base::Result<void> AddModulesFromPartition(
   for (const auto& path_entry :
        std::filesystem::recursive_directory_iterator(partition)) {
     if (path_entry.path().extension() == ".ko") {
-      modules.push_back(path_entry.path().string());
+      modules.push_back(path_entry);
       ++modules_found;
     }
   }
@@ -173,70 +199,107 @@ android::base::Result<void> AddModulesFromPartition(
   return {};
 }
 
+android::base::Result<void> InspectModule(
+    const std::unordered_set<std::string>& ack_modules,
+    const std::filesystem::path& module_path) {
+  android::elf64::Elf64Binary elf;
+  if (!android::elf64::Elf64Parser::ParseElfFile(module_path, elf)) {
+    GTEST_LOG_(WARNING) << "Unable to parse module at " << module_path;
+    return {};
+  }
+  ModinfoTags modinfo_tags;
+  for (int i = 0; i < elf.sections.size(); i++) {
+    android::elf64::Elf64_Sc& section = elf.sections[i];
+    // Skip irrelevant sections
+    if (section.name != ".modinfo") continue;
+    // Ensure the buffer is zero terminated.
+    if (section.data.back() != '\0') {
+      section.data.push_back('\0');
+    }
+    modinfo_tags.ParseData(section.data);
+    break;
+  }
+  // GKI Module
+  // TODO: b/374932907 -- Despite the fact that technically GKI modules are a
+  // subset of ACK modules add a dedicated check for them in V2.
+
+  // ACK
+  const std::string module_hash =
+      ModuleHash(modinfo_tags.TagValue("name"), modinfo_tags.TagValue("author"),
+                 modinfo_tags.TagValue("license"));
+  if (ack_modules.contains(module_hash)) {
+    return {};
+  }
+  // DDK
+  if (modinfo_tags.TagValue("built_with") == "DDK") {
+    return {};
+  }
+  return android::base::Error()
+         << "Non compliant module found: " << module_path;
+}
+
 // @VsrTest = 3.4.2
 TEST_F(BuiltWithDdkTest, SystemModules) {
-  constexpr uint64_t kMinAndroidRelease = 16;
-  const auto& kernel_version = runtime_info_->kernelVersion();
-  const auto& kernel_release = android::kver::KernelRelease::Parse(
-      runtime_info_->osRelease(), /* allow_suffix = */ true);
-
-  if (!kernel_release.has_value() ||
-      (kernel_release->android_release() < kMinAndroidRelease)) {
-    GTEST_SKIP() << "The test only applies to android" << kMinAndroidRelease
-                 << " or later kernels.";
-  }
-  if (runtime_info_->kernelVersion().dropMinor() <
-      android::vintf::Version{6, 12}) {
-    GTEST_SKIP() << "Exempt from built with DDK test. Kernel: "
-                 << kernel_version.version << " " << kernel_version.majorRev;
-  }
-  // Get the information of ACK modules from the test data and from the system
-  // if available.
-  const auto ack_modules = GetAckModules();
-  ASSERT_RESULT_OK(ack_modules) << "Unable to read list of ACK modules.";
-
-  std::vector<std::string> device_module_paths;
+  std::vector<std::filesystem::path> device_module_paths;
   ASSERT_RESULT_OK(
       AddModulesFromPartition(device_module_paths, "/vendor_dlkm/"));
   ASSERT_RESULT_OK(
       AddModulesFromPartition(device_module_paths, "/system_dlkm/"));
-  // TODO: b/374932907 -- For V2 of this test, also include ramdisk files.
 
+  // Run the inspection for each module found.
   for (const auto& module_path : device_module_paths) {
-    android::elf64::Elf64Binary elf;
-    if (!android::elf64::Elf64Parser::ParseElfFile(module_path, elf)) {
-      GTEST_LOG_(WARNING) << "Unable to parse module at " << module_path;
-      continue;
-    }
-    ModinfoTags modinfo_tags;
-    for (int i = 0; i < elf.sections.size(); i++) {
-      android::elf64::Elf64_Sc &section = elf.sections[i];
-      // Skip irrelevant sections
-      if (section.name != ".modinfo") continue;
-      // Ensure the buffer is zero terminated.
-      if (section.data.back() != '\0') {
-        section.data.push_back('\0');
-      }
-      modinfo_tags.ParseData(section.data);
-      break;
-    }
-    // GKI Module
-    // TODO: b/374932907 -- Despite the fact that technically GKI modules are a
-    // subset of ACK modules add a dedicated check for them in V2.
-
-    // ACK
-    const std::string module_hash = ModuleHash(
-        modinfo_tags.TagValue("name"), modinfo_tags.TagValue("author"),
-        modinfo_tags.TagValue("license"));
-    if (ack_modules->contains(module_hash)) {
-      continue;
-    }
-    // DDK
-    if (modinfo_tags.TagValue("built_with") == "DDK") {
-      continue;
-    }
-    ADD_FAILURE() << "Non compliant module found: " << module_path;
+    EXPECT_RESULT_OK(InspectModule(ack_modules_.value(), module_path));
   }
+}
+
+void InspectExtractedRamdisk(
+    const std::filesystem::path& extracted_ramdisk_path,
+    const std::unordered_set<std::string>& ack_modules) {
+  std::vector<std::filesystem::path> kernel_module_paths;
+
+  for (auto& path_entry :
+       std::filesystem::recursive_directory_iterator(extracted_ramdisk_path)) {
+    if (path_entry.path().extension() == ".ko") {
+      kernel_module_paths.push_back(path_entry);
+    }
+  }
+
+  // Run the inspection for each module found.
+  for (const auto& module_path : kernel_module_paths) {
+    EXPECT_RESULT_OK(InspectModule(ack_modules, module_path));
+  }
+}
+
+// @VsrTest = 3.4.2
+TEST_F(BuiltWithDdkTest, BootModules) {
+  const std::string boot_path = "/dev/block/by-name/init_boot" + slot_suffix_;
+  if (!std::filesystem::exists(boot_path)) {
+    GTEST_SKIP() << "Boot path " << boot_path << " does not exist.";
+  }
+  const auto extracted_ramdisk = android::ExtractRamdiskToDirectory(boot_path);
+  ASSERT_TRUE(extracted_ramdisk.ok())
+      << "Failed to extract ramdisk: " << extracted_ramdisk.error();
+  InspectExtractedRamdisk((*extracted_ramdisk)->path, ack_modules_.value());
+}
+
+// TODO: b/374932907 -- Verify if this is enough for vendor_kernel_boot as well.
+// @VsrTest = 3.4.2
+TEST_F(BuiltWithDdkTest, VendorBootModules) {
+  const std::string vendor_boot_path =
+      "/dev/block/by-name/vendor_boot" + slot_suffix_;
+
+  if (!std::filesystem::exists(vendor_boot_path)) {
+    GTEST_SKIP() << "Boot path " << vendor_boot_path << " does not exist.";
+  }
+  const auto extracted_vendor_ramdisk =
+      android::ExtractVendorRamdiskToDirectory(vendor_boot_path);
+
+  ASSERT_TRUE(extracted_vendor_ramdisk.ok())
+      << "Failed to extract vendor_ramdisk: "
+      << extracted_vendor_ramdisk.error();
+
+  InspectExtractedRamdisk((*extracted_vendor_ramdisk)->path,
+                          ack_modules_.value());
 }
 
 }  // namespace
