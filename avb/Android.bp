@@ -123,10 +123,14 @@ cc_test {
         "libvintf_static_user_defaults",
     ],
     static_libs: [
+        "libbase",
         "libcrypto_static",
         "libelf64",
+        "libgtest",
+        "liblz4",
         "libtinyxml2",
         "libvintf",
+        "vts_boot_test_utils_lib",
     ],
     cflags: [
         "-Wall",
