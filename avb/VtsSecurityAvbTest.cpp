@@ -476,10 +476,15 @@ TEST(AvbTest, SystemDescriptor) {
   }
   // https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity#optional-parameters
   std::set<std::string> opt_params = {
-      "check_at_most_once",
       "ignore_corruption",
-      "ignore_zero_blocks",
       "restart_on_corruption",
+      "panic_on_corruption",
+      "restart_on_error",
+      "panic_on_error",
+      "ignore_zero_blocks",
+      "check_at_most_once",
+      "root_hash_sig_key_desc",
+      "try_verify_in_tasklet"
   };
   // https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity#optional-fec-forward-error-correction-parameters
   std::map<std::string, std::string> opt_fec_params = {
