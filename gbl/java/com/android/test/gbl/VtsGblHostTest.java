@@ -44,6 +44,7 @@ import org.junit.runner.RunWith;
 @RunWith(DeviceJUnit4ClassRunner.class)
 public class VtsGblHostTest extends BaseHostJUnit4Test {
     private File mTempDir;
+    private CompatibilityBuildHelper mBuildHelper;
 
     @Before
     public final void setUp() throws DeviceNotAvailableException, IOException {
@@ -52,6 +53,7 @@ public class VtsGblHostTest extends BaseHostJUnit4Test {
         assumeThat("GBL version prop", gblVersion, not(-1L));
 
         mTempDir = FileUtil.createTempDir("VtsGblHostTest");
+        mBuildHelper = new CompatibilityBuildHelper(getBuild());
     }
 
     @After
@@ -80,39 +82,39 @@ public class VtsGblHostTest extends BaseHostJUnit4Test {
             CLog.i("Skipping rest of test because GBL is presubmit build");
             return;
         }
-        final long gblBuildIncremental = Long.parseLong(gblBuildNumber);
+    }
+
+    private boolean extractBootEfi(File esp, File out) throws IOException {
+        File mtools = mBuildHelper.getTestFile("mtools");
+        for (String efiName : new String[] {"::/EFI/BOOT/BOOTAA64.EFI", "::/EFI/BOOT/BOOTX64.EFI",
+                     "::/EFI/BOOT/BOOTIA32.EFI"}) {
+            out.delete();
+            CommandResult result = new RunUtil().runTimedCmd(3000, mtools.getAbsolutePath(), "-c",
+                    "mcopy", "-i", esp.getAbsolutePath(),
+                    "-n", // Don't complain about overwrite
+                    efiName, out.getAbsolutePath());
+            if (CommandStatus.SUCCESS.equals(result.getStatus())) {
+                CLog.i("Found EFI application: " + efiName);
+                return true;
+            }
+        }
+        return false;
     }
 
     @Test
     public void testCertificate() throws DeviceNotAvailableException, IOException {
         ITestDevice device = getDevice();
-        File android_esp = new File(mTempDir, "android_esp");
+        File androidEsp = new File(mTempDir, "android_esp");
         assertTrue("Fetch android_esp partition",
-                device.pullFile("/dev/block/by-name/android_esp", android_esp));
+                device.pullFile("/dev/block/by-name/android_esp", androidEsp));
 
-        CompatibilityBuildHelper buildHelper = new CompatibilityBuildHelper(getBuild());
-        File mtools = buildHelper.getTestFile("mtools");
-        File boot_efi = new File(mTempDir, "boot.efi");
-        boolean found_efi = false;
-        for (String efi_name : new String[] {"::/EFI/BOOT/BOOTAA64.EFI", "::/EFI/BOOT/BOOTX64.EFI",
-                     "::/EFI/BOOT/BOOTIA32.EFI"}) {
-            boot_efi.delete();
-            CommandResult result = new RunUtil().runTimedCmd(3000, mtools.getAbsolutePath(), "-c",
-                    "mcopy", "-i", android_esp.getAbsolutePath(),
-                    "-n", // Don't complain about overwrite
-                    efi_name, boot_efi.getAbsolutePath());
-            if (CommandStatus.SUCCESS.equals(result.getStatus())) {
-                CLog.i("Found EFI application: " + efi_name);
-                found_efi = true;
-                break;
-            }
-        }
-        assertTrue("Found EFI application", found_efi);
+        File bootEfi = new File(mTempDir, "boot.efi");
+        assertTrue("Found EFI application", extractBootEfi(androidEsp, bootEfi));
 
-        // FIXME(b/387241522): Check public key hash.
-        File gblsigntool = buildHelper.getTestFile("gblsigntool");
-        CommandResult result = new RunUtil().runTimedCmd(
-                5000, gblsigntool.getAbsolutePath(), "verify", boot_efi.getAbsolutePath());
+        File gblsigntool = mBuildHelper.getTestFile("gblsigntool");
+        File gblPublicKey = mBuildHelper.getTestFile("gbl_key.pub.pem");
+        CommandResult result = new RunUtil().runTimedCmd(5000, gblsigntool.getAbsolutePath(),
+                "verify", bootEfi.getAbsolutePath(), "--key", gblPublicKey.getAbsolutePath());
         CLog.i("gblsigntool stdout: " + result.getStdout());
         assertEquals("gblsigntool stderr: " + result.getStderr(), CommandStatus.SUCCESS,
                 result.getStatus());
