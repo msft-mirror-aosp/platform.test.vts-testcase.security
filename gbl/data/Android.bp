@@ -17,25 +17,9 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-java_test_host {
-    name: "VtsGblHostTest",
-    srcs: ["java/**/*.java"],
-    static_libs: [
-        "hamcrest-library",
-    ],
-    libs: [
-        "tradefed",
-        "compatibility-tradefed",
-    ],
-    data: [
-        ":gbl_key.pub.pem",
-    ],
-    data_native_bins: [
-        "mtools",
-        "gblsigntool",
-    ],
-    test_suites: [
-        "general-tests",
-        "vts",
+filegroup {
+    name: "gbl_key.pub.pem",
+    srcs: [
+        "gbl_key.pub.pem",
     ],
 }
