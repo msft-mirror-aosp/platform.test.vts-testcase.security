@@ -291,15 +291,17 @@ TEST_F(BuiltWithDdkTest, VendorBootModules) {
   if (!std::filesystem::exists(vendor_boot_path)) {
     GTEST_SKIP() << "Boot path " << vendor_boot_path << " does not exist.";
   }
-  const auto extracted_vendor_ramdisk =
-      android::ExtractVendorRamdiskToDirectory(vendor_boot_path);
+  const auto extracted_vendor_ramdisks =
+      android::ExtractVendorRamdisks(vendor_boot_path);
 
-  ASSERT_TRUE(extracted_vendor_ramdisk.ok())
+  ASSERT_TRUE(extracted_vendor_ramdisks.ok())
       << "Failed to extract vendor_ramdisk: "
-      << extracted_vendor_ramdisk.error();
+      << extracted_vendor_ramdisks.error();
 
-  InspectExtractedRamdisk((*extracted_vendor_ramdisk)->path,
-                          ack_modules_.value());
+  for (const auto& extracted_vendor_ramdisk : *extracted_vendor_ramdisks) {
+    InspectExtractedRamdisk(extracted_vendor_ramdisk->path,
+                            ack_modules_.value());
+  }
 }
 
 }  // namespace
