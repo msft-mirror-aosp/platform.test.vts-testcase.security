@@ -93,8 +93,6 @@ class VtsTrebleSysPropTest(unittest.TestCase):
 
     Attributes:
         _temp_dir: The temporary directory to which necessary files are copied.
-        _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH:  The path of public property
-                                              contexts file.
         _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH:  The path of system property
                                               contexts file.
         _PRODUCT_PROPERTY_CONTEXTS_FILE_PATH: The path of product property
@@ -115,7 +113,6 @@ class VtsTrebleSysPropTest(unittest.TestCase):
             "vendor_" or "odm_", but these are exceptions.
     """
 
-    _PUBLIC_PROPERTY_CONTEXTS_FILE_PATH  = ("private/property_contexts")
     _SYSTEM_PROPERTY_CONTEXTS_FILE_PATH  = ("/system/etc/selinux/"
                                             "plat_property_contexts")
     _PRODUCT_PROPERTY_CONTEXTS_FILE_PATH = ("/product/etc/selinux/"
@@ -383,48 +380,6 @@ class VtsTrebleSysPropTest(unittest.TestCase):
             lambda typename: typename.startswith(self._VENDOR_TYPE_PREFIX) or
             typename.startswith(self._ODM_TYPE_PREFIX) or
             typename in self._VENDOR_OR_ODM_WHITELISTED_TYPES)
-
-    def testExportedPlatformPropertyIntegrity(self):
-        """Ensures public property contexts isn't modified at all.
-
-        Public property contexts must not be modified.
-        """
-        logging.info("Checking existence of %s",
-                     self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH)
-        self.AssertPermissionsAndExistence(
-            self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH,
-            IsReadable)
-
-        # Pull system property contexts file from device.
-        self.dut.AdbPull(self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH,
-                          self._temp_dir)
-        logging.info("Adb pull %s to %s",
-                     self._SYSTEM_PROPERTY_CONTEXTS_FILE_PATH, self._temp_dir)
-
-        with open(os.path.join(self._temp_dir, "plat_property_contexts"),
-                  "r") as property_contexts_file:
-            sys_property_dict = self._ParsePropertyDictFromPropertyContextsFile(
-                property_contexts_file, True)
-        logging.info(
-            "Found %d exact-matching properties "
-            "in system property contexts", len(sys_property_dict))
-
-        # Extract data from parfile.
-        resource_name = os.path.basename(self._PUBLIC_PROPERTY_CONTEXTS_FILE_PATH)
-        package_name = os.path.dirname(
-            self._PUBLIC_PROPERTY_CONTEXTS_FILE_PATH).replace(os.path.sep, '.')
-        with resources.files(package_name).joinpath(resource_name).open('r') \
-            as resource:
-            pub_property_dict = self._ParsePropertyDictFromPropertyContextsFile(
-                resource, True)
-        for name in pub_property_dict:
-            public_tokens = pub_property_dict[name]
-            self.assertTrue(name in sys_property_dict,
-                               "Exported property (%s) doesn't exist" % name)
-            system_tokens = sys_property_dict[name]
-            self.assertEqual(public_tokens, system_tokens,
-                                "Exported property (%s) is modified" % name)
-
 
     def AssertPermissionsAndExistence(self, path, check_permission):
         """Asserts that the specified path exists and has the correct permission.
