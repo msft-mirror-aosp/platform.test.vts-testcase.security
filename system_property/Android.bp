@@ -29,9 +29,6 @@ python_test_host {
         "vndk_utils",
         "vts_vndk_utils",
     ],
-    data: [
-        ":private_property_contexts",
-    ],
     test_suites: [
         "vts",
     ],
