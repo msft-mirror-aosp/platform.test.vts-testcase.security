@@ -18,8 +18,6 @@ package {
 }
 
 filegroup {
-    name: "gbl_key.pub.pem",
-    srcs: [
-        "gbl_key.pub.pem",
-    ],
+    name: "gbl_keystore_keys",
+    srcs: ["**/*"],
 }

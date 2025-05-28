@@ -61,14 +61,23 @@ public class VtsGblHostTest extends BaseHostJUnit4Test {
         FileUtil.recursiveDelete(mTempDir);
     }
 
+    private CommandResult logCommandResult(final String name, final CommandResult result) {
+        CLog.i("Result of command: %s", name);
+        CLog.i("Status: %s", result.getStatus());
+        CLog.i("Exit code: %s", result.getExitCode());
+        CLog.i("Stdout: %s", result.getStdout());
+        CLog.i("Stderr: %s", result.getStderr());
+        return result;
+    }
+
     @Test
     public void testSystemProperties() throws DeviceNotAvailableException, NumberFormatException {
         ITestDevice device = getDevice();
         final long gblVersion = device.getIntProperty("ro.boot.gbl.version", -1);
         final String gblBuildNumber = device.getProperty("ro.boot.gbl.build_number");
 
-        CLog.i("GBL version: " + gblVersion);
-        CLog.i("GBL build_number: " + gblBuildNumber);
+        CLog.i("GBL version: %s", gblVersion);
+        CLog.i("GBL build_number: %s", gblBuildNumber);
 
         assertNotNull(gblBuildNumber);
 
@@ -84,39 +93,23 @@ public class VtsGblHostTest extends BaseHostJUnit4Test {
         }
     }
 
-    private boolean extractBootEfi(File esp, File out) throws IOException {
-        File mtools = mBuildHelper.getTestFile("mtools");
-        for (String efiName : new String[] {"::/EFI/BOOT/BOOTAA64.EFI", "::/EFI/BOOT/BOOTX64.EFI",
-                     "::/EFI/BOOT/BOOTIA32.EFI"}) {
-            out.delete();
-            CommandResult result = new RunUtil().runTimedCmd(3000, mtools.getAbsolutePath(), "-c",
-                    "mcopy", "-i", esp.getAbsolutePath(),
-                    "-n", // Don't complain about overwrite
-                    efiName, out.getAbsolutePath());
-            if (CommandStatus.SUCCESS.equals(result.getStatus())) {
-                CLog.i("Found EFI application: " + efiName);
-                return true;
-            }
-        }
-        return false;
-    }
-
     @Test
     public void testCertificate() throws DeviceNotAvailableException, IOException {
         ITestDevice device = getDevice();
-        File androidEsp = new File(mTempDir, "android_esp");
-        assertTrue("Fetch android_esp partition",
-                device.pullFile("/dev/block/by-name/android_esp", androidEsp));
-
         File bootEfi = new File(mTempDir, "boot.efi");
-        assertTrue("Found EFI application", extractBootEfi(androidEsp, bootEfi));
+        assertTrue("Pull efisp partition", device.pullFile("/dev/block/by-name/efisp", bootEfi));
 
         File gblsigntool = mBuildHelper.getTestFile("gblsigntool");
-        File gblPublicKey = mBuildHelper.getTestFile("gbl_key.pub.pem");
-        CommandResult result = new RunUtil().runTimedCmd(5000, gblsigntool.getAbsolutePath(),
-                "verify", bootEfi.getAbsolutePath(), "--key", gblPublicKey.getAbsolutePath());
-        CLog.i("gblsigntool stdout: " + result.getStdout());
-        assertEquals("gblsigntool stderr: " + result.getStderr(), CommandStatus.SUCCESS,
-                result.getStatus());
+        File gblPublicKey = new File(mBuildHelper.getTestFile("gbl"), "202504/gbl_key_pub.pem");
+
+        CommandResult result = logCommandResult("gblsigntool info",
+                new RunUtil().runTimedCmd(
+                        5000, gblsigntool.getAbsolutePath(), "info", bootEfi.getAbsolutePath()));
+        assertEquals("gblsigntool info command", CommandStatus.SUCCESS, result.getStatus());
+
+        result = logCommandResult("gblsigntool verify",
+                new RunUtil().runTimedCmd(5000, gblsigntool.getAbsolutePath(), "verify",
+                        bootEfi.getAbsolutePath(), "--key", gblPublicKey.getAbsolutePath()));
+        assertEquals("gblsigntool verify command", CommandStatus.SUCCESS, result.getStatus());
     }
 }
