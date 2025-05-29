@@ -28,10 +28,9 @@ java_test_host {
         "compatibility-tradefed",
     ],
     data: [
-        ":gbl_key.pub.pem",
+        ":gbl_keystore_keys",
     ],
     data_native_bins: [
-        "mtools",
         "gblsigntool",
     ],
     test_suites: [
