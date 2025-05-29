@@ -1,2 +1,4 @@
 rammuthiah@google.com
 yochiang@google.com
+
+include platform/bootable/libbootloader:/gbl/OWNERS
