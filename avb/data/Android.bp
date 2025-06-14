@@ -60,7 +60,7 @@ filegroup {
 }
 
 filegroup {
-    name: "kernel-modules.xml",
+    name: "kernel_modules_xml",
     srcs: [
         "kernel-modules.xml",
     ],

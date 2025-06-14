@@ -117,7 +117,7 @@ cc_test {
         "vts_built_with_ddk_test.cpp",
     ],
     data: [
-        ":kernel-modules.xml",
+        ":kernel_modules_xml",
     ],
     defaults: [
         "libvintf_static_user_defaults",
