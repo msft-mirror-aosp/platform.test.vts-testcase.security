@@ -45,6 +45,13 @@ filegroup {
 }
 
 filegroup {
+    name: "tvgki_avbpubkey",
+    srcs: [
+        "tvgki.avbpubkey",
+    ],
+}
+
+filegroup {
     name: "ogki_avbpubkeys",
     srcs: [
         "ogki-pubkeys/*.avbpubkey",
