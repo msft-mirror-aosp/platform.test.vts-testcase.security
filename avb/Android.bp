@@ -126,7 +126,7 @@ cc_test {
     static_libs: [
         "libbase",
         "libcrypto_static",
-        "libelf64",
+        "libelfutils",
         "libgtest",
         "liblz4",
         "libtinyxml2",
