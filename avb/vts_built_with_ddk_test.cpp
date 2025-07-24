@@ -29,9 +29,9 @@
 #include <android-base/result.h>
 #include <android-base/strings.h>
 
+#include <elfutils/parse.h>
 #include <gtest/gtest.h>
 #include <kver/kernel_release.h>
-#include <libelf64/parse.h>
 #include <openssl/sha.h>
 #include <tinyxml2.h>
 #include <vintf/VintfObject.h>
@@ -202,14 +202,14 @@ android::base::Result<void> AddModulesFromPartition(
 android::base::Result<void> InspectModule(
     const std::unordered_set<std::string>& ack_modules,
     const std::filesystem::path& module_path) {
-  android::elf64::Elf64Binary elf;
-  if (!android::elf64::Elf64Parser::ParseElfFile(module_path, elf)) {
+  android::elfutils::Elf64Binary elf;
+  if (!android::elfutils::Elf64Parser::ParseElfFile(module_path, elf)) {
     GTEST_LOG_(WARNING) << "Unable to parse module at " << module_path;
     return {};
   }
   ModinfoTags modinfo_tags;
   for (int i = 0; i < elf.sections.size(); i++) {
-    android::elf64::Elf64_Sc& section = elf.sections[i];
+    android::elfutils::Elf64_Sc& section = elf.sections[i];
     // Skip irrelevant sections
     if (section.name != ".modinfo") continue;
     // Ensure the buffer is zero terminated.
