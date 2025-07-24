@@ -29,9 +29,9 @@
 #include <android-base/result.h>
 #include <android-base/strings.h>
 
+#include <elfutils/parse.h>
 #include <gtest/gtest.h>
 #include <kver/kernel_release.h>
-#include <libelfutils/parse.h>
 #include <openssl/sha.h>
 #include <tinyxml2.h>
 #include <vintf/VintfObject.h>
