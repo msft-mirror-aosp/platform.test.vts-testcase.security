@@ -29,7 +29,7 @@
 #include <android-base/result.h>
 #include <android-base/strings.h>
 
-#include <elfutils/parse.h>
+#include <elfutils/elf-file.h>
 #include <gtest/gtest.h>
 #include <kver/kernel_release.h>
 #include <openssl/sha.h>
@@ -199,24 +199,31 @@ android::base::Result<void> AddModulesFromPartition(
   return {};
 }
 
+using ::android::elfutils::ElfFile;
+
 android::base::Result<void> InspectModule(
     const std::unordered_set<std::string>& ack_modules,
     const std::filesystem::path& module_path) {
-  android::elfutils::Elf64Binary elf;
-  if (!android::elfutils::Elf64Parser::ParseElfFile(module_path, elf)) {
-    GTEST_LOG_(WARNING) << "Unable to parse module at " << module_path;
+  std::unique_ptr<ElfFile> elfFile = ElfFile::create(module_path);
+  if (!elfFile) {
+    GTEST_LOG_(WARNING) << "Not a valid ELF file or failed to parse: "
+                        << module_path;
     return {};
   }
+
   ModinfoTags modinfo_tags;
-  for (int i = 0; i < elf.sections.size(); i++) {
-    android::elfutils::Elf64_Sc& section = elf.sections[i];
+  for (const auto& section : elfFile->getSections()) {
     // Skip irrelevant sections
     if (section.name != ".modinfo") continue;
-    // Ensure the buffer is zero terminated.
-    if (section.data.back() != '\0') {
-      section.data.push_back('\0');
+
+    // ElfFile sections isn't mutable. Copy the section and ensure
+    // it's null terminated.
+    std::vector<char> modinfo_data = section.data;
+    if (modinfo_data.empty() || modinfo_data.back() != '\0') {
+      modinfo_data.push_back('\0');
     }
-    modinfo_tags.ParseData(section.data);
+
+    modinfo_tags.ParseData(modinfo_data);
     break;
   }
   // GKI Module
