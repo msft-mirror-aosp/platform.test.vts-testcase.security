@@ -266,9 +266,16 @@ bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
                              allowed_oem_key_names.begin(),
                              allowed_oem_key_names.end());
   }
+
   if (IsTvDevice()) {
-    allowed_key_names = { "tvgki.avbpubkey" };
+    std::vector<std::string> allowed_tv_key_names = {
+        "tvgki.avbpubkey",
+    };
+    allowed_key_names.insert(allowed_key_names.end(),
+                             allowed_tv_key_names.begin(),
+                             allowed_tv_key_names.end());
   }
+
   for (const auto &key_name : allowed_key_names) {
     const auto key_path = exec_dir + "/" + key_name;
     std::string allowed_key_blob;
