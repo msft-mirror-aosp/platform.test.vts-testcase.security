@@ -418,18 +418,11 @@ class GkiComplianceTest : public testing::Test {
   int product_first_api_level;
 };
 
-const std::regex GkiComplianceTest::ogkiUnameRegex =
-    std::regex("-abogki[0-9]+(-|$)");
-
 bool GkiComplianceTest::IsOgkiBuild() const {
-  /* Android release version should at least be android14 for OGKI build. */
-  const auto kernel_release = android::kver::KernelRelease::Parse(
-      runtime_info->osRelease(), /* allow_suffix = */ true);
-  if (!kernel_release.has_value() || kernel_release->android_release() < 14) {
-    return false;
-  }
-
-  return std::regex_search(runtime_info->osRelease(), ogkiUnameRegex);
+  /* Kernel version should be at least 6.6 for OGKI build. */
+  return runtime_info->kernelVersion().dropMinor() >=
+             android::vintf::Version{6, 6} &&
+         runtime_info->osRelease().find("-abogki") != std::string::npos;
 }
 
 bool GkiComplianceTest::ShouldSkipGkiComplianceV2() {
