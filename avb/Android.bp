@@ -47,7 +47,6 @@ cc_defaults {
         ":t-gsi_avbpubkey",
         ":qcar-gsi_avbpubkey",
         ":gki-oem-2024_avbpubkey",
-        ":ogki_avbpubkeys",
         ":tvgki_avbpubkey",
     ],
     cflags: [
