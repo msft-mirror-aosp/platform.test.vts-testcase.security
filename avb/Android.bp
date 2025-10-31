@@ -46,7 +46,6 @@ cc_defaults {
         ":t-gsi_avbpubkey",
         ":qcar-gsi_avbpubkey",
         ":gki-oem-2024_avbpubkey",
-        ":ogki_avbpubkeys",
     ],
     cflags: [
         "-Wall",
@@ -77,7 +76,6 @@ cc_test {
         "vts_gki_compliance_test.cpp",
         "kernel_version_test.cpp",
         "kernel_version_matrix.proto",
-        "ogki_builds_utils.cpp",
     ],
     static_libs: [
         "libgmock",
@@ -112,6 +110,5 @@ filegroup {
     name: "vts_gki_compliance_test_cpp",
     srcs: [
         "vts_gki_compliance_test.cpp",
-        "ogki_builds_utils.cpp",
     ],
 }
