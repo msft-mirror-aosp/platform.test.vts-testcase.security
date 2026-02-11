@@ -147,4 +147,31 @@ release_requirements: [
       ]
     }
   }
+  {
+    # Android 17
+    key: 37
+    value {
+      upgrade: [
+        "android12-5.10",
+        "android13-5.10",
+        "android13-5.15",
+        "android14-5.15",
+        "android14-6.1",
+        "android15-6.6",
+        "android16-6.12",
+        "android17-6.18"
+      ]
+      launch: [
+        "android16-6.12",
+        "android17-6.18"
+      ]
+      launch_grf: [
+        "android14-5.15",
+        "android14-6.1",
+        "android15-6.6",
+        "android16-6.12",
+        "android17-6.18"
+      ]
+    }
+  }
 ]
