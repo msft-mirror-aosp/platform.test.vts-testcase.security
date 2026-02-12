@@ -146,7 +146,7 @@ release_requirements: [
         "android16-6.12"
       ]
     }
-  }
+  },
   {
     # Android 17
     key: 37
