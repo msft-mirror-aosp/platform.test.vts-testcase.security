@@ -32,6 +32,7 @@ java_test_host {
     ],
     data_native_bins: [
         "gblsigntool",
+        "mtools",
     ],
     test_suites: [
         "general-tests",
