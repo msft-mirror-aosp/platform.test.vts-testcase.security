@@ -93,11 +93,37 @@ public class VtsGblHostTest extends BaseHostJUnit4Test {
         }
     }
 
+    private boolean extractBootEfi(File esp, File out) throws IOException {
+        File mtools = mBuildHelper.getTestFile("mtools");
+        for (String efiName :
+                new String[] {"::/EFI/BOOT/BOOTAA64.EFI", "::/EFI/BOOT/BOOTX64.EFI"}) {
+            out.delete();
+            CommandResult result = new RunUtil().runTimedCmd(3000, mtools.getAbsolutePath(), "-c",
+                    "mcopy", "-i", esp.getAbsolutePath(),
+                    "-n", // Don't complain about overwrite
+                    efiName, out.getAbsolutePath());
+            if (CommandStatus.SUCCESS.equals(result.getStatus())) {
+                CLog.i("Found EFI application: " + efiName);
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Test
     public void testCertificate() throws DeviceNotAvailableException, IOException {
         ITestDevice device = getDevice();
+
+        String slotSuffix = device.getProperty("ro.boot.slot_suffix");
+        assertNotNull("ro.boot.slot_suffix must be defined", slotSuffix);
+
+        String androidEspDevPath = "/dev/block/by-name/android_esp" + slotSuffix;
+        File androidEsp = new File(mTempDir, "android_esp");
+        assertTrue("Fetch " + androidEspDevPath + " partition",
+                device.pullFile(androidEspDevPath, androidEsp));
+
         File bootEfi = new File(mTempDir, "boot.efi");
-        assertTrue("Pull efisp partition", device.pullFile("/dev/block/by-name/efisp", bootEfi));
+        assertTrue("Found EFI application", extractBootEfi(androidEsp, bootEfi));
 
         File gblsigntool = mBuildHelper.getTestFile("gblsigntool");
         File gblPublicKey = new File(mBuildHelper.getTestFile("gbl"), "202504/gbl_key_pub.pem");
