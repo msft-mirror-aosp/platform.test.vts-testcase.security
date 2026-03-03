@@ -15,7 +15,7 @@
 -->
 <configuration description="Runs VtsGblHostTest">
     <object type="module_controller" class="com.android.tradefed.testtype.suite.module.ShippingApiLevelModuleController">
-        <option name="vsr-min-api-level" value="202504" />
+        <option name="vendor-min-api-level" value="202504" />
     </object>
 
     <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
