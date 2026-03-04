@@ -24,6 +24,7 @@
 #include <gtest/gtest.h>
 #include <openssl/sha.h>
 #include <stdio.h>
+#include <sys/sysinfo.h>
 #include <utils/String8.h>
 #include <utils/Vector.h>
 
@@ -131,6 +132,16 @@ static bool DeviceHasPackage(const std::string &package_name) {
   }
 
   return packages.value().find(package_name) != std::string::npos;
+}
+
+static std::optional<uint64_t> GetTotalMemoryKiB() {
+  struct sysinfo info;
+  if (sysinfo(&info) != 0) {
+    return std::nullopt;
+  }
+  // info.totalram is in units of info.mem_unit.
+  uint64_t total_mem_bytes = (uint64_t)info.totalram * info.mem_unit;
+  return total_mem_bytes / 1024;
 }
 
 static bool IsWatchDevice() {
@@ -241,7 +252,8 @@ bool IsGoDevice() {
          !IsVrHeadsetDevice() && !IsArcDevice();
 }
 
-bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
+bool ValidatePublicKeyBlob(const std::string& key_blob_to_validate,
+                           const bool is_validating_gki_key) {
   if (key_blob_to_validate.empty()) {
     GTEST_LOG_(ERROR) << "Failed to validate an empty key";
     return false;
@@ -261,7 +273,20 @@ bool ValidatePublicKeyBlob(const std::string &key_blob_to_validate) {
                              allowed_oem_key_names.end());
   }
 
-  if (IsTvDevice()) {
+  if (IsTvDevice() && is_validating_gki_key) {
+    const uint64_t kMinTvMemoryForMobileGkiKiB = 3 * 1024 * 1024;  // 3GB
+    const uint64_t kMaxMemoryCarveoutKiB = 500 * 1024;             // 500MB
+    std::optional<uint64_t> total_mem_kib = GetTotalMemoryKiB();
+    if (total_mem_kib.has_value()) {
+      GTEST_LOG_(INFO) << "Total memory: " << *total_mem_kib << " KiB";
+      if (*total_mem_kib <
+          kMinTvMemoryForMobileGkiKiB - kMaxMemoryCarveoutKiB) {
+        allowed_key_names.clear();
+      }
+    } else {
+      GTEST_LOG_(ERROR) << "Could not get total memory from sysinfo().";
+      return false;
+    }
     std::vector<std::string> allowed_tv_key_names = {
         "tvgki.avbpubkey",
     };
