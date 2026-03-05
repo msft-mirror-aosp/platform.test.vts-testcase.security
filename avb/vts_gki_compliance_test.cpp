@@ -315,7 +315,7 @@ std::unique_ptr<GkiBootImage> LoadAndVerifyGkiBootImage(
       ADD_FAILURE() << "The GKI image descriptor is not signed.";
       continue;
     }
-    if (!ValidatePublicKeyBlob(out_public_key_data)) {
+    if (!ValidatePublicKeyBlob(out_public_key_data, /*is_validating_gki_key=*/true)) {
       ADD_FAILURE()
           << "The GKI image descriptor is not signed by an official key.";
       continue;
